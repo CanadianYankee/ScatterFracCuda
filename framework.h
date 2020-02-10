@@ -16,10 +16,12 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <memory>
 
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <wrl/client.h>
+#include <cuda_d3d11_interop.h>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;

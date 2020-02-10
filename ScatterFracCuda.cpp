@@ -46,5 +46,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
+	CGenerateWnd::DestroyMainWnd();
+
     return (int) msg.wParam;
 }

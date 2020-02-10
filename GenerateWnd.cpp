@@ -2,6 +2,8 @@
 #include "Resource.h"
 #include "DXUtils.h"
 #include "GenerateWnd.h"
+#include "DX11CudaTexture.h"
+#include "DXUtils.h"
 
 CGenerateWnd* g_pMainWnd = nullptr;
 
@@ -40,6 +42,14 @@ CGenerateWnd* CGenerateWnd::GetMainWnd()
     return g_pMainWnd;
 }
 
+void CGenerateWnd::DestroyMainWnd()
+{
+	if (g_pMainWnd)
+	{
+		delete g_pMainWnd;
+		g_pMainWnd = nullptr;
+	}
+}
 
 BOOL CGenerateWnd::Initialize(HINSTANCE hInstance, const WCHAR* szTitle, const WCHAR* szWindowClass, int nCmdShow)
 {
@@ -79,8 +89,8 @@ BOOL CGenerateWnd::Initialize(HINSTANCE hInstance, const WCHAR* szTitle, const W
     hr = InitDirect3D();
     if (FAILED(hr)) return FALSE;
 
-//    hr = InitD3DResources();
-//    if (FAILED(hr)) return FALSE;
+    hr = InitD3DResources();
+    if (FAILED(hr)) return FALSE;
 
 //    hr = InitWorld();
 //    if (FAILED(hr)) return FALSE;
@@ -138,6 +148,35 @@ HRESULT CGenerateWnd::InitDirect3D()
     assert(SUCCEEDED(hr));
 
     return OnResize();
+}
+
+HRESULT CGenerateWnd::InitD3DResources()
+{
+	HRESULT hr = S_OK;
+
+	m_pTexture = std::make_unique<CDX11CudaTexture>(640, 400);
+	hr = m_pTexture->Initialize(m_pD3DDevice);
+	if (FAILED(hr)) return hr;
+
+	// Load the Vertex and Pixel shaders
+	ComPtr<ID3D11DeviceChild> pShader;
+	hr = DXUtils::LoadShader(m_pD3DDevice, DXUtils::ShaderType::VertexShader, L"TextureVS.cso", nullptr, &pShader);
+	if (SUCCEEDED(hr))
+	{
+		hr = pShader.As<ID3D11VertexShader>(&m_pVertexShader);
+	}
+	if (FAILED(hr)) return hr;
+	D3DDEBUGNAME(m_pVertexShader, "Vertex Shader");
+
+	hr = DXUtils::LoadShader(m_pD3DDevice, DXUtils::ShaderType::PixelShader, L"TexturePS.cso", nullptr, &pShader);
+	if (SUCCEEDED(hr))
+	{
+		hr = pShader.As<ID3D11PixelShader>(&m_pPixelShader);
+	}
+	if (FAILED(hr)) return hr;
+	D3DDEBUGNAME(m_pPixelShader, "Pixel Shader");
+
+	return hr;
 }
 
 HRESULT CGenerateWnd::OnResize()
@@ -200,16 +239,16 @@ HRESULT CGenerateWnd::RenderScene()
 
     m_pD3DContext->ClearRenderTargetView(m_pRenderTargetView.Get(), background);
 
-//    m_pD3DContext->IASetInputLayout(0);
-//    m_pD3DContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    m_pD3DContext->IASetInputLayout(0);
+    m_pD3DContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-//    m_pD3DContext->VSSetShader(m_pVertexShader.Get(), NULL, 0);
+    m_pD3DContext->VSSetShader(m_pVertexShader.Get(), NULL, 0);
 
-//    m_pD3DContext->PSSetShader(m_pPixelShader.Get(), NULL, 0);
-//    m_pD3DContext->PSSetShaderResources(0, 1, m_pTextureSRV.GetAddressOf());
-//    m_pD3DContext->PSSetSamplers(0, 1, m_pSamplerState.GetAddressOf());
+	m_pD3DContext->PSSetShader(m_pPixelShader.Get(), NULL, 0);
 
-//    m_pD3DContext->Draw(4, 0);
+	m_pTexture->LoadPS(m_pD3DContext);
+
+    m_pD3DContext->Draw(4, 0);
 
     hr = m_pSwapChain->Present(1, 0);
 
