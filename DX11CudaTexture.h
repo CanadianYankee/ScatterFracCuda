@@ -10,6 +10,7 @@ public:
 
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice);
 	void LoadPS(ComPtr<ID3D11DeviceContext> pDeviceContext);
+	float AspectRatio() { return m_fAspectRatio; }
 
 protected:
 	UINT m_nWidth;

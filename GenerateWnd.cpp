@@ -27,7 +27,8 @@ CGenerateWnd::CGenerateWnd() :
     , m_iClientWidth(0)
     , m_iClientHeight(0)
     , m_fAspectRatio(1.0f)
-{}
+{
+}
 
 CGenerateWnd::~CGenerateWnd()
 {}
@@ -92,6 +93,9 @@ BOOL CGenerateWnd::Initialize(HINSTANCE hInstance, const WCHAR* szTitle, const W
     hr = InitD3DResources();
     if (FAILED(hr)) return FALSE;
 
+    hr = OnResize();
+    if (FAILED(hr)) return FALSE;
+
 //    hr = InitWorld();
 //    if (FAILED(hr)) return FALSE;
 
@@ -147,13 +151,14 @@ HRESULT CGenerateWnd::InitDirect3D()
     }
     assert(SUCCEEDED(hr));
 
-    return OnResize();
+    return hr;
 }
 
 HRESULT CGenerateWnd::InitD3DResources()
 {
 	HRESULT hr = S_OK;
 
+    // Initialize the drawing texture
 	m_pTexture = std::make_unique<CDX11CudaTexture>(640, 400);
 	hr = m_pTexture->Initialize(m_pD3DDevice);
 	if (FAILED(hr)) return hr;
@@ -175,6 +180,21 @@ HRESULT CGenerateWnd::InitD3DResources()
 	}
 	if (FAILED(hr)) return hr;
 	D3DDEBUGNAME(m_pPixelShader, "Pixel Shader");
+
+    // Constant buffer for the vetex shader
+    D3D11_SUBRESOURCE_DATA cbData;
+    cbData.pSysMem = &m_sVSVariables;
+    cbData.SysMemPitch = 0;
+    cbData.SysMemSlicePitch = 0;
+    D3D11_BUFFER_DESC Desc;
+    Desc.Usage = D3D11_USAGE_DYNAMIC;
+    Desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    Desc.MiscFlags = 0;
+    Desc.ByteWidth = sizeof(VS_VARIABLES);
+    hr = m_pD3DDevice->CreateBuffer(&Desc, &cbData, &m_pCBVSVariables);
+    if (FAILED(hr)) return hr;
+    D3DDEBUGNAME(m_pCBVSVariables, "Vertex Shader CB");
 
 	return hr;
 }
@@ -218,6 +238,28 @@ HRESULT CGenerateWnd::OnResize()
 
             m_pD3DContext->RSSetViewports(1, &vp);
         }
+
+        if (m_pTexture.get())
+        {
+            float fTexAspect = m_pTexture->AspectRatio();
+            m_sVSVariables.g_fXScale = m_sVSVariables.g_fYScale = 1.0f;
+            if (m_fAspectRatio > fTexAspect)
+            {
+                m_sVSVariables.g_fXScale = fTexAspect / m_fAspectRatio;
+            }
+            else if (m_fAspectRatio < fTexAspect)
+            {
+                m_sVSVariables.g_fYScale = m_fAspectRatio / fTexAspect;
+            }
+
+            if (m_pCBVSVariables.Get())
+            {
+                D3D11_MAPPED_SUBRESOURCE MappedResource;
+                m_pD3DContext->Map(m_pCBVSVariables.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+                CopyMemory(MappedResource.pData, &m_sVSVariables, sizeof(VS_VARIABLES));
+                m_pD3DContext->Unmap(m_pCBVSVariables.Get(), 0);
+            }
+        }
     }
 
     assert(SUCCEEDED(hr));
@@ -235,7 +277,7 @@ HRESULT CGenerateWnd::RenderScene()
         return FALSE;
     }
 
-    const float background[4] = { 1.0f, 0.0f, 1.0f, 1.0f };
+    const float background[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
 
     m_pD3DContext->ClearRenderTargetView(m_pRenderTargetView.Get(), background);
 
@@ -243,6 +285,7 @@ HRESULT CGenerateWnd::RenderScene()
     m_pD3DContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
     m_pD3DContext->VSSetShader(m_pVertexShader.Get(), NULL, 0);
+    m_pD3DContext->VSSetConstantBuffers(0, 1, m_pCBVSVariables.GetAddressOf());
 
 	m_pD3DContext->PSSetShader(m_pPixelShader.Get(), NULL, 0);
 
