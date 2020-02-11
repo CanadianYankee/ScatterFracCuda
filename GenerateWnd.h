@@ -1,6 +1,6 @@
 #pragma once
 
-class CDX11CudaTexture;
+class CGenerator;
 
 class CGenerateWnd
 {
@@ -41,7 +41,7 @@ protected:
 	ComPtr<IDXGISwapChain> m_pSwapChain;
 	ComPtr<ID3D11RenderTargetView> m_pRenderTargetView;
 
-	std::unique_ptr<CDX11CudaTexture> m_pTexture;
+	std::unique_ptr<CGenerator> m_pGenerator;
 
 	ComPtr<ID3D11VertexShader> m_pVertexShader;
 	ComPtr<ID3D11PixelShader> m_pPixelShader;

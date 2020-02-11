@@ -2,7 +2,7 @@
 #include "Resource.h"
 #include "DXUtils.h"
 #include "GenerateWnd.h"
-#include "DX11CudaTexture.h"
+#include "Generator.h"
 #include "DXUtils.h"
 
 CGenerateWnd* g_pMainWnd = nullptr;
@@ -158,9 +158,10 @@ HRESULT CGenerateWnd::InitD3DResources()
 {
 	HRESULT hr = S_OK;
 
-    // Initialize the drawing texture
-	m_pTexture = std::make_unique<CDX11CudaTexture>(640, 400);
-	hr = m_pTexture->Initialize(m_pD3DDevice);
+    // Initialize the generator
+    CONFIG_DATA config;
+    m_pGenerator = std::make_unique<CGenerator>(config);
+	hr = m_pGenerator->Initialize(m_pD3DDevice);
 	if (FAILED(hr)) return hr;
 
 	// Load the Vertex and Pixel shaders
@@ -239,9 +240,9 @@ HRESULT CGenerateWnd::OnResize()
             m_pD3DContext->RSSetViewports(1, &vp);
         }
 
-        if (m_pTexture.get())
+        if (m_pGenerator.get())
         {
-            float fTexAspect = m_pTexture->AspectRatio();
+            float fTexAspect = m_pGenerator->DrawAspectRatio();
             m_sVSVariables.g_fXScale = m_sVSVariables.g_fYScale = 1.0f;
             if (m_fAspectRatio > fTexAspect)
             {
@@ -289,7 +290,7 @@ HRESULT CGenerateWnd::RenderScene()
 
 	m_pD3DContext->PSSetShader(m_pPixelShader.Get(), NULL, 0);
 
-	m_pTexture->LoadPS(m_pD3DContext);
+	m_pGenerator->LoadDrawPS(m_pD3DContext);
 
     m_pD3DContext->Draw(4, 0);
 
