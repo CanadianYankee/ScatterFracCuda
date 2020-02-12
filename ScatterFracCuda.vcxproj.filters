@@ -48,6 +48,9 @@
     <ClInclude Include="ConfigData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CudaUtil.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ScatterFracCuda.cpp">

@@ -2,6 +2,7 @@
 
 #include "ConfigData.h"
 #include "DX11CudaTexture.h"
+#include "CudaUtil.h"
 
 class CGenerator
 {
@@ -10,16 +11,16 @@ public:
 	~CGenerator();
 
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice);
-
+	HRESULT Iterate();
 	float DrawAspectRatio() { return m_pTexture->AspectRatio(); }
 	void LoadDrawPS(ComPtr<ID3D11DeviceContext> pD3DContext) { m_pTexture->LoadPS(pD3DContext); } 
 
 protected:
 	CONFIG_DATA m_config;
 	std::unique_ptr<CDX11CudaTexture> m_pTexture;
-	size_t m_nAccumWidth;
-	size_t m_nAccumHeight;
-	size_t m_nAccumPitch;
-	size_t m_nAccumMargin;
+	SIZE_2D m_sizeAccum;
+	UINT m_nAccumMargin;
 	PVOID m_pAccumArray;
+	PVOID m_pAccumMax;
+	PVOID m_pDrawScale;
 };

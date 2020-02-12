@@ -272,11 +272,14 @@ HRESULT CGenerateWnd::RenderScene()
 {
     HRESULT hr = S_OK;
 
-    if (!m_pD3DContext || !m_pSwapChain)
+    if (!m_pD3DContext || !m_pSwapChain || !m_pGenerator)
     {
         assert(false);
         return FALSE;
     }
+
+	hr = m_pGenerator->Iterate();
+	if (FAILED(hr)) return hr;
 
     const float background[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
 

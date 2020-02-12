@@ -3,12 +3,11 @@
 #include "DX11CudaTexture.h"
 
 CDX11CudaTexture::CDX11CudaTexture(UINT nWidth, UINT nHeight) :
-	  m_nWidth(nWidth)
-	, m_nHeight(nHeight)
-	, m_nPitch(0)
+	  m_size(nWidth, nHeight)
 	, m_fAspectRatio((float)nWidth/(float)nHeight)
 	, m_pCudaResource(nullptr)
 	, m_pCudaMemory(nullptr)
+	, m_pCudaArray(nullptr)
 {
 }
 
@@ -33,8 +32,8 @@ HRESULT CDX11CudaTexture::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	// Create the texture for drawing
 	D3D11_TEXTURE2D_DESC desc;
 	ZeroMemory(&desc, sizeof(desc));
-	desc.Width = m_nWidth;
-	desc.Height = m_nHeight;
+	desc.Width = m_size.nWidth;
+	desc.Height = m_size.nHeight;
 	desc.MipLevels = 1;
 	desc.ArraySize = 1;
 	desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -64,11 +63,47 @@ HRESULT CDX11CudaTexture::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	// Register the Texture as a CUDA resource 
 	cudaGraphicsD3D11RegisterResource(&m_pCudaResource, m_pD3DTexture.Get(), cudaGraphicsRegisterFlagsNone);
 	if (cudaGetLastError() != cudaSuccess) return E_FAIL;
-	cudaMallocPitch(&m_pCudaMemory, &m_nPitch, m_nWidth * sizeof(float) * 4, m_nHeight);
+	size_t pitch;
+	cudaMallocPitch(&m_pCudaMemory, &pitch, m_size.nWidth * sizeof(float) * 4, m_size.nHeight);
 	if (cudaGetLastError() != cudaSuccess) return E_FAIL;
-	cudaMemset(m_pCudaMemory, 0, m_nPitch * m_nHeight);
+	cudaMemset(m_pCudaMemory, 0, pitch * m_size.nHeight);
+	m_size.nPitch = (UINT)pitch;
 
 	return hr;
+}
+
+cudaError_t CDX11CudaTexture::MapToCudaArray(PVOID* pCudaMemory)
+{
+	cudaError_t err = cudaSuccess;
+
+	assert(!(*pCudaMemory) && !m_pCudaArray);
+
+	err = cudaGraphicsMapResources(1, &m_pCudaResource);
+	if (err != cudaSuccess) return err;
+
+	err = cudaGraphicsSubResourceGetMappedArray(&m_pCudaArray, m_pCudaResource, 0, 0);
+	if (err != cudaSuccess) return err;
+
+	*pCudaMemory = m_pCudaMemory;
+
+	return err;
+}
+
+cudaError_t CDX11CudaTexture::UnmapFromCudaArray()
+{
+	cudaError_t err = cudaSuccess;
+
+	assert(m_pCudaArray);
+
+	err = cudaMemcpy2DToArray(m_pCudaArray, 0, 0, m_pCudaMemory, m_size.nPitch, (size_t)m_size.nWidth * 4 * sizeof(float), m_size.nHeight, cudaMemcpyDeviceToDevice);
+	if (err != cudaSuccess) return err;
+
+	cudaGraphicsUnmapResources(1, &m_pCudaResource);
+	if (err != cudaSuccess) return err;
+
+	m_pCudaArray = nullptr;
+	
+	return err;
 }
 
 void CDX11CudaTexture::LoadPS(ComPtr<ID3D11DeviceContext> pD3DContext)
