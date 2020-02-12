@@ -29,6 +29,7 @@ protected:
 	HRESULT InitDirect3D();
 	HRESULT InitD3DResources();
 	HRESULT OnResize();
+	HRESULT GenerateScene();
 	HRESULT RenderScene();
 
 	HWND m_hWnd;

@@ -96,12 +96,8 @@ BOOL CGenerateWnd::Initialize(HINSTANCE hInstance, const WCHAR* szTitle, const W
     hr = OnResize();
     if (FAILED(hr)) return FALSE;
 
-//    hr = InitWorld();
-//    if (FAILED(hr)) return FALSE;
-
-    // Do the CUDA calculation
-//    hr = DoCUDA();
-//    if (FAILED(hr)) return FALSE;
+    hr = GenerateScene();
+    if (FAILED(hr)) return FALSE;
 
     UpdateWindow(m_hWnd);
 
@@ -268,18 +264,25 @@ HRESULT CGenerateWnd::OnResize()
     return hr;
 }
 
+HRESULT CGenerateWnd::GenerateScene()
+{
+    HRESULT hr = S_OK;
+
+    hr = m_pGenerator->Iterate();
+    if (FAILED(hr)) return hr;
+
+    return hr;
+}
+
 HRESULT CGenerateWnd::RenderScene()
 {
     HRESULT hr = S_OK;
 
-    if (!m_pD3DContext || !m_pSwapChain || !m_pGenerator)
+    if (!m_pD3DContext || !m_pSwapChain)
     {
         assert(false);
         return FALSE;
     }
-
-	hr = m_pGenerator->Iterate();
-	if (FAILED(hr)) return hr;
 
     const float background[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
 
