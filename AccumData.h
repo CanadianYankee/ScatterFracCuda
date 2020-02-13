@@ -1,24 +1,47 @@
 #pragma once
 
-struct SIZE_2D
+inline void CudaFree(PVOID& ptr) { if (ptr) { cudaFree(ptr); ptr = nullptr; } }
+
+// Struct to encapsulate a memory-aligned 2D array on the GPU device
+struct GPU_ARRAY_2D
 {
-	__host__ __device__ SIZE_2D() : nWidth(0), nHeight(0), nPitch(0) {}
-	__host__ __device__ SIZE_2D(UINT w, UINT h, UINT p = 0) : nWidth(w), nHeight(h), nPitch(p) {}
+	GPU_ARRAY_2D() : pArray(nullptr), nWidth(0), nHeight(0), nPitch(0) {}
+	GPU_ARRAY_2D(PVOID ptr, UINT w, UINT h, UINT p = 0) : pArray(ptr), nWidth(w), nHeight(h), nPitch(p) {}
+	PVOID pArray;
 	UINT nWidth;
 	UINT nHeight;
 	UINT nPitch;
 };
 
+// Each element in the 2D accum array is of this type
 struct COUNT_COLOR
 {
-	__host__ __device__ COUNT_COLOR() : nCount(0), r(0), g(0), b(0) {}
+	COUNT_COLOR() : nCount(0), r(0), g(0), b(0) {}
 	UINT nCount;
 	float r, g, b;
 };
 
-struct ACCUM_STATS
+// Parameters passed to each accum thread
+struct ACCUM_PARAMS
 {
+	BOOL bAccum;	// When true, do count/color tracking
+	BOOL bMinMax;	// When true, adjust bounding box
+	UINT nSteps;	// Number of iterations to do in this cycle (per thread)
+};
+
+// Global statistics kept across all accum threads (in global GPU memory)
+struct ACCUM_STATS
+{ 
+	ACCUM_STATS() : nMaxCount(0), xMin(0), yMin(0), yMax(0) {}
 	UINT nMaxCount;
 	float xMin, yMin, xMax, yMax; 
+	UINT nHitRect;
+	UINT nNewHits;
+};
 
+// Parameters passed to each render thread
+struct RENDER_PARAMS
+{
+	float fCountScale;	// Scale factor for count (based on MaxCount)
+	UINT iAntiAlias;	// AntiAlias factor
 };

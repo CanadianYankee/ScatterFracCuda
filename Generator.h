@@ -11,16 +11,13 @@ public:
 	~CGenerator();
 
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice);
-	HRESULT Iterate();
+	HRESULT Iterate(BOOL bRender = TRUE);
 	float DrawAspectRatio() { return m_pTexture->AspectRatio(); }
 	void LoadDrawPS(ComPtr<ID3D11DeviceContext> pD3DContext) { m_pTexture->LoadPS(pD3DContext); } 
 
 protected:
 	CONFIG_DATA m_config;
 	std::unique_ptr<CDX11CudaTexture> m_pTexture;
-	SIZE_2D m_sizeAccum;
-	UINT m_nAccumMargin;
-	PVOID m_pAccumArray;
+	GPU_ARRAY_2D m_AccumArray;
 	PVOID m_pAccumStats;
-	PVOID m_pDrawScale;
 };

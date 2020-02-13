@@ -3,12 +3,12 @@
 #include "DX11CudaTexture.h"
 
 CDX11CudaTexture::CDX11CudaTexture(UINT nWidth, UINT nHeight) :
-	  m_size(nWidth, nHeight)
-	, m_fAspectRatio((float)nWidth/(float)nHeight)
+	  m_fAspectRatio((float)nWidth/(float)nHeight)
 	, m_pCudaResource(nullptr)
-	, m_pCudaMemory(nullptr)
 	, m_pCudaArray(nullptr)
 {
+	m_GpuArray.nWidth = nWidth;
+	m_GpuArray.nHeight = nHeight;
 }
 
 CDX11CudaTexture::~CDX11CudaTexture()
@@ -18,22 +18,20 @@ CDX11CudaTexture::~CDX11CudaTexture()
 		cudaGraphicsUnregisterResource(m_pCudaResource);
 		m_pCudaResource = nullptr;
 	}
-	if (m_pCudaMemory)
-	{
-		cudaFree(m_pCudaMemory);
-		m_pCudaMemory = nullptr;
-	}
+	CudaFree(m_GpuArray.pArray);
 }
 
 HRESULT CDX11CudaTexture::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 {
 	HRESULT hr = S_OK;
 
+	assert(m_GpuArray.nWidth && m_GpuArray.nHeight);
+
 	// Create the texture for drawing
 	D3D11_TEXTURE2D_DESC desc;
 	ZeroMemory(&desc, sizeof(desc));
-	desc.Width = m_size.nWidth;
-	desc.Height = m_size.nHeight;
+	desc.Width = m_GpuArray.nWidth;
+	desc.Height = m_GpuArray.nHeight;
 	desc.MipLevels = 1;
 	desc.ArraySize = 1;
 	desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -64,19 +62,19 @@ HRESULT CDX11CudaTexture::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	cudaGraphicsD3D11RegisterResource(&m_pCudaResource, m_pD3DTexture.Get(), cudaGraphicsRegisterFlagsNone);
 	if (cudaGetLastError() != cudaSuccess) return E_FAIL;
 	size_t pitch;
-	cudaMallocPitch(&m_pCudaMemory, &pitch, m_size.nWidth * sizeof(float) * 4, m_size.nHeight);
+	cudaMallocPitch(&m_GpuArray.pArray, &pitch, m_GpuArray.nWidth * sizeof(float) * 4, m_GpuArray.nHeight);
 	if (cudaGetLastError() != cudaSuccess) return E_FAIL;
-	cudaMemset(m_pCudaMemory, 0, pitch * m_size.nHeight);
-	m_size.nPitch = (UINT)pitch;
+	cudaMemset(m_GpuArray.pArray, 0, pitch * m_GpuArray.nHeight);
+	m_GpuArray.nPitch = (UINT)pitch;
 
 	return hr;
 }
 
-cudaError_t CDX11CudaTexture::MapToCudaArray(PVOID* pCudaMemory)
+cudaError_t CDX11CudaTexture::MapToCudaArray(GPU_ARRAY_2D &cudaTexture)
 {
 	cudaError_t err = cudaSuccess;
 
-	assert(!(*pCudaMemory) && !m_pCudaArray);
+	assert(!(cudaTexture.pArray) && !m_pCudaArray);
 
 	err = cudaGraphicsMapResources(1, &m_pCudaResource);
 	if (err != cudaSuccess) return err;
@@ -84,7 +82,7 @@ cudaError_t CDX11CudaTexture::MapToCudaArray(PVOID* pCudaMemory)
 	err = cudaGraphicsSubResourceGetMappedArray(&m_pCudaArray, m_pCudaResource, 0, 0);
 	if (err != cudaSuccess) return err;
 
-	*pCudaMemory = m_pCudaMemory;
+	cudaTexture = m_GpuArray;
 
 	return err;
 }
@@ -95,7 +93,8 @@ cudaError_t CDX11CudaTexture::UnmapFromCudaArray()
 
 	assert(m_pCudaArray);
 
-	err = cudaMemcpy2DToArray(m_pCudaArray, 0, 0, m_pCudaMemory, m_size.nPitch, (size_t)m_size.nWidth * 4 * sizeof(float), m_size.nHeight, cudaMemcpyDeviceToDevice);
+	err = cudaMemcpy2DToArray(m_pCudaArray, 0, 0, m_GpuArray.pArray, m_GpuArray.nPitch, 
+		(size_t)m_GpuArray.nWidth * 4 * sizeof(float), m_GpuArray.nHeight, cudaMemcpyDeviceToDevice);
 	if (err != cudaSuccess) return err;
 
 	cudaGraphicsUnmapResources(1, &m_pCudaResource);

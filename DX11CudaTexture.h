@@ -13,19 +13,18 @@ public:
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice);
 	void LoadPS(ComPtr<ID3D11DeviceContext> pDeviceContext);
 	float AspectRatio() { return m_fAspectRatio; }
-	cudaError_t MapToCudaArray(PVOID *pCudaMemory);
+	cudaError_t MapToCudaArray(GPU_ARRAY_2D &cudaTexture);
 	cudaError_t UnmapFromCudaArray();
-	SIZE_2D Size() { return m_size; }
+	GPU_ARRAY_2D &GpuArray() { return m_GpuArray; }
 
 protected:
-	SIZE_2D m_size;
 	float m_fAspectRatio;
 
 	ComPtr<ID3D11Texture2D> m_pD3DTexture;
 	ComPtr<ID3D11ShaderResourceView> m_pD3DTextureSRV;
 	ComPtr<ID3D11SamplerState> m_pSamplerState;
 	cudaGraphicsResource* m_pCudaResource;
-	PVOID m_pCudaMemory;
+	GPU_ARRAY_2D m_GpuArray;
 	cudaArray* m_pCudaArray;
 };
 

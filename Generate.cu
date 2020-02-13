@@ -1,41 +1,44 @@
 #include "framework.h"
 #include "AccumData.h"
 
-__global__ void test_iterate(unsigned char *pArray, unsigned char *pStats, SIZE_2D arr_size, size_t count)
+__global__ void test_iterate(GPU_ARRAY_2D arrAccum, PVOID pStats, ACCUM_PARAMS params)
 {
 	UINT tidx = blockIdx.x * blockDim.x + threadIdx.x;
 	UINT tidy = blockIdx.y * blockDim.y + threadIdx.y;
-	if (tidx >= arr_size.nWidth || tidy >= arr_size.nHeight) return;
+	if (tidx >= arrAccum.nWidth || tidy >= arrAccum.nHeight) return;
+	unsigned char* pArray = (unsigned char *)(arrAccum.pArray);
 	
-	COUNT_COLOR *element = (COUNT_COLOR*)(pArray + tidy * arr_size.nPitch + tidx * sizeof(COUNT_COLOR));
-	element->nCount = tidx + tidy;
-	element->r = (tidx & 256) / 256.0; 
+	COUNT_COLOR *element = (COUNT_COLOR*)(pArray + tidy * arrAccum.nPitch + tidx * sizeof(COUNT_COLOR));
+	element->nCount = tidx + tidy + 2;
+	element->r = (tidx & 256) / 256.0;
 	element->g = (tidy & 256) / 256.0;
-	element->b = (((tidx >> 2) & (tidy >> 2)) & 256) / 256.0;
+	element->b = (((tidx >> 2)& (tidy >> 2)) & 256) / 256.0;
 	atomicMax(&((ACCUM_STATS *)pStats)->nMaxCount, element->nCount);
 }
 
-__global__ void render_texture(unsigned char* pTex, SIZE_2D tex_size, unsigned char* pArray, SIZE_2D arr_size, float* pScale, UINT iAntiAlias)
+__global__ void render_texture(GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum, const RENDER_PARAMS params)
 {
 	UINT texx = blockIdx.x * blockDim.x + threadIdx.x;
 	UINT texy = blockIdx.y * blockDim.y + threadIdx.y;
-	if (texx >= tex_size.nWidth || texy >= tex_size.nHeight) return;
+	if (texx >= texture.nWidth || texy >= texture.nHeight) return;
 
-	float *pixel = (float*)(pTex + texy * tex_size.nPitch) + 4 * texx;
+	float *pixel = (float*)((unsigned char *)(texture.pArray) + texy * texture.nPitch) + 4 * texx;
 
+	int iAntiAlias = max(1, params.iAntiAlias);
 	UINT arrx = texx * iAntiAlias;
 	UINT arry = texy * iAntiAlias;
 
 	float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
 	for (UINT j = 0; j < iAntiAlias; j++)
 	{
-		COUNT_COLOR* pRow = (COUNT_COLOR*)(pArray + (arry + j) * arr_size.nPitch);
+		COUNT_COLOR* pRow = (COUNT_COLOR*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
-			a += (float)(pRow[arrx + i].nCount) * (*pScale);
-			r += pRow[arrx + i].r;
-			g += pRow[arrx + i].g;
-			b += pRow[arrx + i].b;
+			COUNT_COLOR* pItem = &pRow[arrx + i];
+			a += (float)(pItem->nCount) * params.fCountScale;
+			r += pItem->r;
+			g += pItem->g;
+			b += pItem->b;
 		}
 	}
 	a /= (float)(iAntiAlias * iAntiAlias);
@@ -45,7 +48,7 @@ __global__ void render_texture(unsigned char* pTex, SIZE_2D tex_size, unsigned c
 	pixel[3] = 1.0f;
 }
 
-cudaError_t cuda_test_generate(PVOID pArray, PVOID pStats, SIZE_2D size, size_t count)
+cudaError_t cuda_test_generate(GPU_ARRAY_2D& arrAccum, PVOID pStats, const ACCUM_PARAMS& params)
 {
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
@@ -54,10 +57,10 @@ cudaError_t cuda_test_generate(PVOID pArray, PVOID pStats, SIZE_2D size, size_t 
 	int accumMax = ((ACCUM_STATS*)pStats)->nMaxCount;
 
 	dim3 Db = dim3(16, 16);   
-	dim3 Dg = dim3(((UINT)size.nWidth + Db.x - 1) / Db.x, ((UINT)size.nHeight + Db.y - 1) / Db.y);
+	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
-	test_iterate << <Dg, Db >> > ((unsigned char*)pArray, (unsigned char*)pStats, size, count);
+	test_iterate << <Dg, Db >> > (arrAccum, pStats, params);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
@@ -71,7 +74,7 @@ cudaError_t cuda_test_generate(PVOID pArray, PVOID pStats, SIZE_2D size, size_t 
 	return error;
 }
 
-cudaError_t cuda_render_texture(PVOID pTexture, SIZE_2D size_tex, PVOID pArray, SIZE_2D size_arr, PVOID pScale, UINT iAntiAlias)
+cudaError_t cuda_render_texture(GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum, const RENDER_PARAMS& params)
 {
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
@@ -79,18 +82,18 @@ cudaError_t cuda_render_texture(PVOID pTexture, SIZE_2D size_tex, PVOID pArray, 
 	cudaEventCreate(&stop);
 
 	dim3 Db = dim3(16, 16);   
-	dim3 Dg = dim3(((UINT)size_tex.nWidth + Db.x - 1) / Db.x, ((UINT)size_tex.nHeight + Db.y - 1) / Db.y);
+	dim3 Dg = dim3(((UINT)texture.nWidth + Db.x - 1) / Db.x, ((UINT)texture.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
-	render_texture <<<Dg, Db>>> ((unsigned char*)pTexture, size_tex, (unsigned char*)pArray, size_arr, (float*)pScale, iAntiAlias);
+	render_texture <<<Dg, Db>>> (texture, arrAccum, params);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
 
 	cudaEventSynchronize(stop);
+	error = cudaGetLastError();
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
-	error = cudaGetLastError();
 
 	return error;
 }
