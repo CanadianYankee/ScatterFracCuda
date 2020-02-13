@@ -1,16 +1,18 @@
 #include "framework.h"
-#include "CudaUtil.h"
+#include "AccumData.h"
 
-__global__ void test_iterate(unsigned char *pArray, UINT *pMax, SIZE_2D arr_size, size_t count)
+__global__ void test_iterate(unsigned char *pArray, unsigned char *pStats, SIZE_2D arr_size, size_t count)
 {
 	UINT tidx = blockIdx.x * blockDim.x + threadIdx.x;
 	UINT tidy = blockIdx.y * blockDim.y + threadIdx.y;
 	if (tidx >= arr_size.nWidth || tidy >= arr_size.nHeight) return;
 	
-	UINT *element = (UINT*)(pArray + tidy * arr_size.nPitch + tidx * sizeof(UINT));
-	UINT val = (UINT)count & tidx & tidy;
-	UINT old = atomicAdd(element, val);
-	atomicMax(pMax, old + val);
+	COUNT_COLOR *element = (COUNT_COLOR*)(pArray + tidy * arr_size.nPitch + tidx * sizeof(COUNT_COLOR));
+	element->nCount = tidx + tidy;
+	element->r = (tidx & 256) / 256.0; 
+	element->g = (tidy & 256) / 256.0;
+	element->b = (((tidx >> 2) & (tidy >> 2)) & 256) / 256.0;
+	atomicMax(&((ACCUM_STATS *)pStats)->nMaxCount, element->nCount);
 }
 
 __global__ void render_texture(unsigned char* pTex, SIZE_2D tex_size, unsigned char* pArray, SIZE_2D arr_size, float* pScale, UINT iAntiAlias)
@@ -24,35 +26,38 @@ __global__ void render_texture(unsigned char* pTex, SIZE_2D tex_size, unsigned c
 	UINT arrx = texx * iAntiAlias;
 	UINT arry = texy * iAntiAlias;
 
-	float color = 0.0f;
+	float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
 	for (UINT j = 0; j < iAntiAlias; j++)
 	{
-		UINT* pRow = (UINT*)(pArray + (arry + j) * arr_size.nPitch);
+		COUNT_COLOR* pRow = (COUNT_COLOR*)(pArray + (arry + j) * arr_size.nPitch);
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
-			color += (float)(pRow[arrx + i]) * (*pScale);
+			a += (float)(pRow[arrx + i].nCount) * (*pScale);
+			r += pRow[arrx + i].r;
+			g += pRow[arrx + i].g;
+			b += pRow[arrx + i].b;
 		}
 	}
-	color /= (float)(iAntiAlias * iAntiAlias);
-	pixel[0] = color;
-	pixel[1] = color;
-	pixel[2] = color;
+	a /= (float)(iAntiAlias * iAntiAlias);
+	pixel[0] = r / (float)(iAntiAlias * iAntiAlias) * a;
+	pixel[1] = g / (float)(iAntiAlias * iAntiAlias) * a;
+	pixel[2] = b / (float)(iAntiAlias * iAntiAlias) * a;
 	pixel[3] = 1.0f;
 }
 
-cudaError_t cuda_test_generate(PVOID pArray, PVOID pMax, SIZE_2D size, size_t count)
+cudaError_t cuda_test_generate(PVOID pArray, PVOID pStats, SIZE_2D size, size_t count)
 {
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-	int accumMax = *(int*)pMax;
+	int accumMax = ((ACCUM_STATS*)pStats)->nMaxCount;
 
 	dim3 Db = dim3(16, 16);   
 	dim3 Dg = dim3(((UINT)size.nWidth + Db.x - 1) / Db.x, ((UINT)size.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
-	test_iterate << <Dg, Db >> > ((unsigned char*)pArray, (UINT*)pMax, size, count);
+	test_iterate << <Dg, Db >> > ((unsigned char*)pArray, (unsigned char*)pStats, size, count);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
@@ -60,7 +65,7 @@ cudaError_t cuda_test_generate(PVOID pArray, PVOID pMax, SIZE_2D size, size_t co
 	cudaEventSynchronize(stop);
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
-	accumMax = *(int*)pMax;
+	accumMax = ((ACCUM_STATS*)pStats)->nMaxCount;
 	error = cudaGetLastError();
 
 	return error;

@@ -48,7 +48,7 @@
     <ClInclude Include="ConfigData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CudaUtil.h">
+    <ClInclude Include="AccumData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

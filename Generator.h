@@ -2,7 +2,7 @@
 
 #include "ConfigData.h"
 #include "DX11CudaTexture.h"
-#include "CudaUtil.h"
+#include "AccumData.h"
 
 class CGenerator
 {
@@ -21,6 +21,6 @@ protected:
 	SIZE_2D m_sizeAccum;
 	UINT m_nAccumMargin;
 	PVOID m_pAccumArray;
-	PVOID m_pAccumMax;
+	PVOID m_pAccumStats;
 	PVOID m_pDrawScale;
 };

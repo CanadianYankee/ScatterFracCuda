@@ -8,3 +8,17 @@ struct SIZE_2D
 	UINT nHeight;
 	UINT nPitch;
 };
+
+struct COUNT_COLOR
+{
+	__host__ __device__ COUNT_COLOR() : nCount(0), r(0), g(0), b(0) {}
+	UINT nCount;
+	float r, g, b;
+};
+
+struct ACCUM_STATS
+{
+	UINT nMaxCount;
+	float xMin, yMin, xMax, yMax; 
+
+};
