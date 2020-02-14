@@ -19,5 +19,8 @@ protected:
 	CONFIG_DATA m_config;
 	std::unique_ptr<CDX11CudaTexture> m_pTexture;
 	GPU_ARRAY_2D m_AccumArray;
+	GPU_ARRAY_2D m_Randgen;
 	PVOID m_pAccumStats;
+	const UINT m_nAccumThreads = 16;
+	const UINT m_nAccumBlocks = 16;
 };

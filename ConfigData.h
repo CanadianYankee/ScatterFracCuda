@@ -11,6 +11,6 @@ struct CONFIG_DATA
 		nDrawWidth(3840)
 		, nDrawHeight(2160)
 		, bAntiAlias(TRUE)
-		, iAntiAliasLevel(3)
+		, iAntiAliasLevel(1)
 	{}
 };

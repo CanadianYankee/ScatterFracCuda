@@ -1,22 +1,36 @@
 #include "framework.h"
 #include "AccumData.h"
+#include "randgen.h"
 
-__global__ void test_iterate(GPU_ARRAY_2D arrAccum, PVOID pStats, ACCUM_PARAMS params)
+__global__ void initialize(ACCUM_PARAMS params, GPU_ARRAY_2D randgen, PVOID pStats)
+{
+	UINT idx = blockIdx.x * blockDim.x + threadIdx.x;
+	CRandgen* rand = &(((CRandgen*)(randgen.pArray))[idx]);
+
+	// On intialize, seed the random number generators
+	if (params.bInit)
+	{
+		rand->init(idx);
+	}
+}
+
+__global__ void test_iterate(ACCUM_PARAMS params, GPU_ARRAY_2D randgen, GPU_ARRAY_2D arrAccum, PVOID pStats)
 {
 	UINT tidx = blockIdx.x * blockDim.x + threadIdx.x;
 	UINT tidy = blockIdx.y * blockDim.y + threadIdx.y;
+	CRandgen *rand = &(((CRandgen*)(randgen.pArray))[threadIdx.x + threadIdx.y * randgen.nWidth]);
 	if (tidx >= arrAccum.nWidth || tidy >= arrAccum.nHeight) return;
 	unsigned char* pArray = (unsigned char *)(arrAccum.pArray);
 	
 	COUNT_COLOR *element = (COUNT_COLOR*)(pArray + tidy * arrAccum.nPitch + tidx * sizeof(COUNT_COLOR));
 	element->nCount = tidx + tidy + 2;
-	element->r = (tidx & 256) / 256.0;
-	element->g = (tidy & 256) / 256.0;
-	element->b = (((tidx >> 2)& (tidy >> 2)) & 256) / 256.0;
+	element->r = rand->frand();
+	element->g = rand->frand();
+	element->b = rand->frand();
 	atomicMax(&((ACCUM_STATS *)pStats)->nMaxCount, element->nCount);
 }
 
-__global__ void render_texture(GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum, const RENDER_PARAMS params)
+__global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum)
 {
 	UINT texx = blockIdx.x * blockDim.x + threadIdx.x;
 	UINT texy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -48,33 +62,52 @@ __global__ void render_texture(GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum, cons
 	pixel[3] = 1.0f;
 }
 
-cudaError_t cuda_test_generate(GPU_ARRAY_2D& arrAccum, PVOID pStats, const ACCUM_PARAMS& params)
+cudaError_t cuda_intialize(const ACCUM_PARAMS& params, GPU_ARRAY_2D& randgen, PVOID pStats)
 {
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-	int accumMax = ((ACCUM_STATS*)pStats)->nMaxCount;
-
-	dim3 Db = dim3(16, 16);   
-	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
-	test_iterate << <Dg, Db >> > (arrAccum, pStats, params);
+	initialize << < randgen.nWidth, randgen.nHeight >> > (params, randgen, pStats);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
 
 	cudaEventSynchronize(stop);
+	error = cudaGetLastError();
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
-	accumMax = ((ACCUM_STATS*)pStats)->nMaxCount;
-	error = cudaGetLastError();
 
 	return error;
 }
 
-cudaError_t cuda_render_texture(GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum, const RENDER_PARAMS& params)
+cudaError_t cuda_test_generate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& randgen, GPU_ARRAY_2D& arrAccum, PVOID pStats)
+{
+	cudaError_t error = cudaSuccess;
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	dim3 Db = dim3(randgen.nWidth, randgen.nHeight);   
+	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
+
+	cudaEventRecord(start);
+	test_iterate << <Dg, Db >> > (params, randgen, arrAccum, pStats);
+	cudaEventRecord(stop);
+	error = cudaGetLastError();
+	if (error != cudaSuccess) return error;
+
+	cudaEventSynchronize(stop);
+	error = cudaGetLastError();
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+
+	return error;
+}
+
+cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum)
 {
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
@@ -85,7 +118,7 @@ cudaError_t cuda_render_texture(GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum, c
 	dim3 Dg = dim3(((UINT)texture.nWidth + Db.x - 1) / Db.x, ((UINT)texture.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
-	render_texture <<<Dg, Db>>> (texture, arrAccum, params);
+	render_texture <<<Dg, Db>>> (params, texture, arrAccum);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
