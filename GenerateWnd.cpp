@@ -156,8 +156,11 @@ HRESULT CGenerateWnd::InitD3DResources()
 
     // Initialize the generator
     CONFIG_DATA config;
-	config.nDrawWidth = m_iClientWidth;
-	config.nDrawHeight = m_iClientHeight;
+    if (!config.nDrawWidth || !config.nDrawHeight)
+    {
+        config.nDrawWidth = m_iClientWidth;
+        config.nDrawHeight = m_iClientHeight;
+    }
 	BOOL bRetry = FALSE;
     m_pGenerator = std::make_unique<CGenerator>(config);
 	hr = m_pGenerator->Initialize(m_pD3DDevice, bRetry);
