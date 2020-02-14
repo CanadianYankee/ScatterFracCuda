@@ -8,9 +8,9 @@ struct CONFIG_DATA
 	int iAntiAliasLevel;
 
 	CONFIG_DATA() :
-		nDrawWidth(3840)
-		, nDrawHeight(2160)
+		nDrawWidth(1920)
+		, nDrawHeight(1080)
 		, bAntiAlias(TRUE)
-		, iAntiAliasLevel(3)
+		, iAntiAliasLevel(5)
 	{}
 };
