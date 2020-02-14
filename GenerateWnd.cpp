@@ -156,8 +156,9 @@ HRESULT CGenerateWnd::InitD3DResources()
 
     // Initialize the generator
     CONFIG_DATA config;
+	BOOL bRetry = FALSE;
     m_pGenerator = std::make_unique<CGenerator>(config);
-	hr = m_pGenerator->Initialize(m_pD3DDevice);
+	hr = m_pGenerator->Initialize(m_pD3DDevice, bRetry);
 	if (FAILED(hr)) return hr;
 
 	// Load the Vertex and Pixel shaders

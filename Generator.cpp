@@ -1,9 +1,7 @@
 #include "framework.h"
 #include "Generator.h"
-#include "randgen.h"
 
-extern cudaError_t cuda_intialize(const ACCUM_PARAMS &params, GPU_ARRAY_2D &randgen, PVOID pStats);
-extern cudaError_t cuda_test_generate(const ACCUM_PARAMS &params, GPU_ARRAY_2D &randgen, GPU_ARRAY_2D &arrAccum, PVOID pStats);
+extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_ARRAY_2D& arrAccum, PVOID pStats);
 extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, GPU_ARRAY_2D &texture, GPU_ARRAY_2D &arrAccum);
 
 CGenerator::CGenerator(const CONFIG_DATA &config) : 
@@ -17,13 +15,13 @@ CGenerator::~CGenerator()
 {
 	CudaFree(m_AccumArray.pArray);
 	CudaFree(m_pAccumStats);
-	CudaFree(m_Randgen.pArray);
+	CudaFree(m_IterArray.pArray);
 	m_pTexture.reset();
 
 	cudaDeviceReset();
 }
 
-HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
+HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 {
 	HRESULT hr = S_OK;
 	cudaError_t err = cudaSuccess;
@@ -55,19 +53,40 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	if (err != cudaSuccess) return E_FAIL;
 
 	// One random number generator for each thread
-	m_Randgen.nWidth = m_nAccumBlocks;
-	m_Randgen.nHeight = m_nAccumThreads;
-	err = cudaMallocManaged(&(m_Randgen.pArray), m_nAccumThreads * m_nAccumBlocks * sizeof(CRandgen));
+	m_IterArray.nWidth = m_nAccumBlocks;
+	m_IterArray.nHeight = m_nAccumThreads;
+	UINT szIters = m_nAccumThreads * m_nAccumBlocks * sizeof(ITERATOR);
+	err = cudaMalloc(&(m_IterArray.pArray), szIters);
 	if (err != cudaSuccess) return E_FAIL;
-	err = cudaDeviceSynchronize();
-	if (err != cudaSuccess) return E_FAIL;
+	err = cudaMemset(m_IterArray.pArray, 0, szIters);
 
 	// Initialize all of the generators
+	err = cudaDeviceSynchronize();
+	if (err != cudaSuccess) return E_FAIL;
 	ACCUM_PARAMS paramsAccum;
 	paramsAccum.bInit = TRUE;
 	paramsAccum.nSteps = 128;
-	err = cuda_intialize(paramsAccum, m_Randgen, m_pAccumStats);
+	ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
+	pAccumStats->xMin = pAccumStats->yMin = FLT_MAX;
+	pAccumStats->xMax = pAccumStats->yMax = -FLT_MAX;
+	GPU_ARRAY_2D arrDummy; 
+	err = cuda_iterate(paramsAccum, m_IterArray, arrDummy, m_pAccumStats);
 	if (err != cudaSuccess) return E_FAIL;
+
+	// Check for failure (blowing up to infinity)
+	pAccumStats = (ACCUM_STATS*)m_pAccumStats;
+	if (pAccumStats->bAbort)
+		bFailed = TRUE;
+	else
+	{
+		float dx = (pAccumStats->xMax - pAccumStats->xMin) * 1.1f;
+		float dy = (pAccumStats->yMax - pAccumStats->yMin) * 1.1f;
+		float cx = 0.5f * (pAccumStats->xMax + pAccumStats->xMin);
+		float cy = 0.5f * (pAccumStats->yMax + pAccumStats->yMin);
+		m_rectScale.fScale = min((float)m_AccumArray.nWidth / dx, (float)m_AccumArray.nHeight / dy);
+		m_rectScale.fOffsetX = 0.5f * (float)m_AccumArray.nWidth - m_rectScale.fScale * cx;
+		m_rectScale.fOffsetY = 0.5f * (float)m_AccumArray.nHeight - m_rectScale.fScale * cy;
+	}
 
 	return hr;
 }
@@ -77,11 +96,21 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 	HRESULT hr = S_OK;
 	cudaError_t err = cudaSuccess;
 
+	//ACCUM_PARAMS paramsAccum;
+	//paramsAccum.nSteps = 0xffffff;
+	//paramsAccum.bInit = FALSE;
+	//err = cuda_test_generate(paramsAccum, m_Randgen, m_AccumArray, m_pAccumStats);
+	//if (err != cudaSuccess) return E_FAIL;
+
 	ACCUM_PARAMS paramsAccum;
-	paramsAccum.nSteps = 0xffffff;
-	paramsAccum.bInit = FALSE;
-	err = cuda_test_generate(paramsAccum, m_Randgen, m_AccumArray, m_pAccumStats);
-	if (err != cudaSuccess) return E_FAIL;
+	paramsAccum.nSteps = 100000;
+	paramsAccum.rect = m_rectScale;
+//	paramsAccum.bHitPercent = TRUE;
+	err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
+
+//	ACCUM_STATS *pAccumStats = (ACCUM_STATS*)m_pAccumStats;
+//	float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
+
 
 	if (bRender)
 	{
