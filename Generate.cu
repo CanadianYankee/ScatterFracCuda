@@ -51,6 +51,9 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 			{
 				COUNT_COLOR* element = (COUNT_COLOR*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(COUNT_COLOR));
 				UINT old = atomicAdd(&(element->nCount), 1);
+				atomicExch(&(element->r), iter->r);
+				atomicExch(&(element->g), iter->g);
+				atomicExch(&(element->b), iter->b);
 				atomicMax(&(accumStats->nMaxCount), old + 1);
 				if (params.bHitPercent)
 				{
@@ -74,48 +77,36 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 
 __device__ void transform(ITERATOR* iter)
 {
-	float r = iter->rand.frand();
-	if (r < 0.33333f)
+	float rnd = iter->rand.frand();
+	float r, g, b;
+	if (rnd < 0.33333f)
 	{
 		iter->x = iter->x * 0.5f;
 		iter->y = iter->y * 0.5f + 0.5f;
-		iter->r = 1.0f;
-		iter->g = 1.0f;
-		iter->b = 0.0f;
+		r = 1.0f;
+		g = 1.0f;
+		b = 0.0f;
 	}
-	else if (r < 0.66666f)
+	else if (rnd < 0.66666f)
 	{
 		iter->x = iter->x * 0.5f + 0.433f;
 		iter->y = iter->y * 0.5f - 0.25f;
-		iter->r = 1.0f;
-		iter->g = 0.0f;
-		iter->b = 1.0f;
+		r = 1.0f;
+		g = 0.0f;
+		b = 1.0f;
 	}
 	else
 	{
 		iter->x = iter->x * 0.5f - 0.433f;
 		iter->y = iter->y * 0.5f - 0.25f;
-		iter->r = 0.0f;
-		iter->g = 1.0f;
-		iter->b = 1.0f;
+		r = 0.0f;
+		g = 1.0f;
+		b = 1.0f;
 	}
+	iter->r = (3.0f * iter->r + r) / 4.0;
+	iter->g = (3.0f * iter->g + g) / 4.0;
+	iter->b = (3.0f * iter->b + b) / 4.0;
 }
-
-//__global__ void test_iterate(ACCUM_PARAMS params, GPU_ARRAY_2D randgen, GPU_ARRAY_2D arrAccum, PVOID pStats)
-//{
-//	UINT tidx = blockIdx.x * blockDim.x + threadIdx.x;
-//	UINT tidy = blockIdx.y * blockDim.y + threadIdx.y;
-//	CRandgen *rand = &(((CRandgen*)(randgen.pArray))[threadIdx.x + threadIdx.y * randgen.nWidth]);
-//	if (tidx >= arrAccum.nWidth || tidy >= arrAccum.nHeight) return;
-//	unsigned char* pArray = (unsigned char *)(arrAccum.pArray);
-//	
-//	COUNT_COLOR *element = (COUNT_COLOR*)(pArray + tidy * arrAccum.nPitch + tidx * sizeof(COUNT_COLOR));
-//	element->nCount = tidx + tidy + 2;
-//	element->r = rand->frand();
-//	element->g = rand->frand();
-//	element->b = rand->frand();
-//	atomicMax(&((ACCUM_STATS *)pStats)->nMaxCount, element->nCount);
-//}
 
 __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum)
 {
@@ -136,9 +127,9 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
 			COUNT_COLOR* pItem = &pRow[arrx + i];
-			r += pItem->nCount * params.fCountScale;
-			g += pItem->nCount * params.fCountScale;
-			b += pItem->nCount * params.fCountScale;
+			r += pItem->r * pItem->nCount * params.fCountScale;
+			g += pItem->g * pItem->nCount* params.fCountScale;
+			b += pItem->b * pItem->nCount * params.fCountScale;
 		}
 	}
 	pixel[0] = r / (float)(iAntiAlias * iAntiAlias);
@@ -167,30 +158,6 @@ cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_
 
 	return error;
 }
-
-//cudaError_t cuda_test_generate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& randgen, GPU_ARRAY_2D& arrAccum, PVOID pStats)
-//{
-//	cudaError_t error = cudaSuccess;
-//	cudaEvent_t start, stop;
-//	cudaEventCreate(&start);
-//	cudaEventCreate(&stop);
-//
-//	dim3 Db = dim3(randgen.nWidth, randgen.nHeight);   
-//	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
-//
-//	cudaEventRecord(start);
-//	test_iterate << <Dg, Db >> > (params, randgen, arrAccum, pStats);
-//	cudaEventRecord(stop);
-//	error = cudaGetLastError();
-//	if (error != cudaSuccess) return error;
-//
-//	cudaEventSynchronize(stop);
-//	error = cudaGetLastError();
-//	float milliseconds = 0;
-//	cudaEventElapsedTime(&milliseconds, start, stop);
-//
-//	return error;
-//}
 
 cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum)
 {

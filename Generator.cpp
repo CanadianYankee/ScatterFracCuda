@@ -96,12 +96,6 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 	HRESULT hr = S_OK;
 	cudaError_t err = cudaSuccess;
 
-	//ACCUM_PARAMS paramsAccum;
-	//paramsAccum.nSteps = 0xffffff;
-	//paramsAccum.bInit = FALSE;
-	//err = cuda_test_generate(paramsAccum, m_Randgen, m_AccumArray, m_pAccumStats);
-	//if (err != cudaSuccess) return E_FAIL;
-
 	ACCUM_PARAMS paramsAccum;
 	paramsAccum.nSteps = 1024;
 	paramsAccum.rect = m_rectScale;
