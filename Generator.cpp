@@ -7,6 +7,7 @@ extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, GPU_ARRAY_2D
 CGenerator::CGenerator(const CONFIG_DATA &config) : 
 	m_config(config)
 	, m_pAccumStats(nullptr)
+	, m_nTotalIter(0)
 {
 
 }
@@ -34,11 +35,9 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	assert(!m_AccumArray.pArray);
 	m_AccumArray.nWidth = m_config.nDrawWidth;
 	m_AccumArray.nHeight = m_config.nDrawHeight;
-	if (m_config.bAntiAlias && m_config.iAntiAliasLevel > 1)
-	{
-		m_AccumArray.nWidth *= m_config.iAntiAliasLevel;
-		m_AccumArray.nHeight *= m_config.iAntiAliasLevel;
-	}
+	m_AccumArray.nWidth *= m_config.AntiAlias();
+	m_AccumArray.nHeight *= m_config.AntiAlias();
+
 	size_t pitch;
 	err = cudaMallocPitch(&(m_AccumArray.pArray), &pitch, m_AccumArray.nWidth * sizeof(COUNT_COLOR), m_AccumArray.nHeight);
 	if (err != cudaSuccess) return E_FAIL;
@@ -60,7 +59,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	if (err != cudaSuccess) return E_FAIL;
 	err = cudaMemset(m_IterArray.pArray, 0, szIters);
 
-	// Initialize all of the generators
+	// Initialize all of the generators and do a short run to find window scale
 	err = cudaDeviceSynchronize();
 	if (err != cudaSuccess) return E_FAIL;
 	ACCUM_PARAMS paramsAccum;
@@ -79,6 +78,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 		bFailed = TRUE;
 	else
 	{
+		// Set window scale
 		float dx = (pAccumStats->xMax - pAccumStats->xMin) * 1.1f;
 		float dy = (pAccumStats->yMax - pAccumStats->yMin) * 1.1f;
 		float cx = 0.5f * (pAccumStats->xMax + pAccumStats->xMin);
@@ -87,6 +87,8 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 		m_rectScale.fOffsetX = 0.5f * (float)m_AccumArray.nWidth - m_rectScale.fScale * cx;
 		m_rectScale.fOffsetY = 0.5f * (float)m_AccumArray.nHeight - m_rectScale.fScale * cy;
 	}
+
+	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() + 1) * m_AccumArray.nHeight * m_AccumArray.nWidth / 25;
 
 	return hr;
 }
@@ -97,7 +99,7 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 	cudaError_t err = cudaSuccess;
 
 	ACCUM_PARAMS paramsAccum;
-	paramsAccum.nSteps = 1024;
+	paramsAccum.nSteps = m_nTotalIter / (m_IterArray.nHeight * m_IterArray.nWidth);
 	paramsAccum.rect = m_rectScale;
 //	paramsAccum.bHitPercent = TRUE;
 	err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
@@ -114,7 +116,7 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 
 		RENDER_PARAMS paramsRender;
 		paramsRender.fCountScale = 1.0f / (float)((UINT*)m_pAccumStats)[0];
-		paramsRender.iAntiAlias = m_config.bAntiAlias && m_config.iAntiAliasLevel > 1 ? (UINT)m_config.iAntiAliasLevel : 1;
+		paramsRender.iAntiAlias = m_config.AntiAlias();
 		err = cuda_render_texture(paramsRender, texture, m_AccumArray);
 		if (err != cudaSuccess) return E_FAIL;
 

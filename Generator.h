@@ -24,4 +24,5 @@ protected:
 	RECT_SCALE m_rectScale;
 	const UINT m_nAccumThreads = 128;
 	const UINT m_nAccumBlocks = 128;
+	UINT m_nTotalIter;
 };
