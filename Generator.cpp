@@ -88,7 +88,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 		m_rectScale.fOffsetY = 0.5f * (float)m_AccumArray.nHeight - m_rectScale.fScale * cy;
 	}
 
-	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() + 1) * m_AccumArray.nHeight * m_AccumArray.nWidth / 25;
+	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * m_AccumArray.nHeight * m_AccumArray.nWidth / 25;
 
 	return hr;
 }
@@ -115,7 +115,7 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 		if (err != cudaSuccess) return E_FAIL;
 
 		RENDER_PARAMS paramsRender;
-		paramsRender.fCountScale = 1.0f / (float)((UINT*)m_pAccumStats)[0];
+		paramsRender.fLogCountScale = 1.0f / logf((float)((UINT*)m_pAccumStats)[0]);
 		paramsRender.iAntiAlias = m_config.AntiAlias();
 		err = cuda_render_texture(paramsRender, texture, m_AccumArray);
 		if (err != cudaSuccess) return E_FAIL;

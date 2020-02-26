@@ -9,10 +9,10 @@ struct CONFIG_DATA
 	UINT iIterationLevel;
 
 	CONFIG_DATA() :
-		nDrawWidth(320)
-		, nDrawHeight(200)
+		nDrawWidth(3840)
+		, nDrawHeight(2160)
 		, bAntiAlias(TRUE)
-		, iAntiAliasLevel(3)
+		, iAntiAliasLevel(5)
 		, iIterationLevel(8)
 	{}
 

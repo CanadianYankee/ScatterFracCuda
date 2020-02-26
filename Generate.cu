@@ -127,9 +127,9 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
 			COUNT_COLOR* pItem = &pRow[arrx + i];
-			r += pItem->r * pItem->nCount * params.fCountScale;
-			g += pItem->g * pItem->nCount* params.fCountScale;
-			b += pItem->b * pItem->nCount * params.fCountScale;
+			if(pItem->r) r += pItem->r * logf(pItem->nCount) * params.fLogCountScale;
+			if(pItem->b) b += pItem->b * logf(pItem->nCount) * params.fLogCountScale;
+			if(pItem->g) g += pItem->g * logf(pItem->nCount) * params.fLogCountScale;
 		}
 	}
 	pixel[0] = r / (float)(iAntiAlias * iAntiAlias);
