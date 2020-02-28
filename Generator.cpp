@@ -118,6 +118,8 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats; 
 		paramsRender.fLogColorScale = 1.0f / logf((float)(pAccumStats->nMaxColorElement));
 		paramsRender.iAntiAlias = m_config.AntiAlias();
+		paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
+		paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
 		err = cuda_render_texture(paramsRender, texture, m_AccumArray);
 		if (err != cudaSuccess) return E_FAIL;
 

@@ -98,6 +98,7 @@
     <ClInclude Include="GenerateWnd.h" />
     <ClInclude Include="Generator.h" />
     <ClInclude Include="AccumData.h" />
+    <ClInclude Include="FloatColor.h" />
     <ClInclude Include="randgen.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScatterFracCuda.h" />

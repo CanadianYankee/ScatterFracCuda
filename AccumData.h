@@ -15,19 +15,8 @@ struct GPU_ARRAY_2D
 	UINT nPitch;
 };
 
-// Each element in the 2D accum array is of this type
-struct FLOAT_COLOR
-{
-	__device__ __host__ FLOAT_COLOR() : r(0), g(0), b(0) {}
-	__device__ __host__ FLOAT_COLOR(float r0, float g0, float b0) : r(r0), g(g0), b(b0) {}
-	__device__ bool IsZero() { return r == 0 && g == 0 && b == 0; }
-	__device__ float Max() { return fmax(fmax(r, g), b); }
-	__device__ void Tint(FLOAT_COLOR clr, float frac) { r = (frac * r + clr.r) / (frac + 1.0f); 
-														g = (frac * g + clr.g) / (frac + 1.0f);
-														b = (frac * b + clr.b) / (frac + 1.0f);	}
-
-	float r, g, b;
-};
+// Each element in the 2D accum array is of type FLOAT_COLOR
+#include "FloatColor.h"
 
 // Each thread gets an iterator, which has a random number generator, a position, and a color
 struct ITERATOR
@@ -70,4 +59,6 @@ struct RENDER_PARAMS
 {
 	float fLogColorScale;	// Scale factor for count (based on MaxColorElement)
 	UINT iAntiAlias;		// AntiAlias factor
+	float fValuePower;		// Value power
+	float fSaturPower;		// Saturation power
 };

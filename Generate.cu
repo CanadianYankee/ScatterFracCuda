@@ -59,7 +59,7 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 				atomicAdd(&(element->r), iter->clr.r);
 				atomicAdd(&(element->g), iter->clr.g);
 				atomicAdd(&(element->b), iter->clr.b);
-				atomicMax(&(accumStats->nMaxColorElement), (UINT)element->Max());
+				atomicMax(&(accumStats->nMaxColorElement), (UINT)ceil(element->Max()));
 			}
 		}
 	}
@@ -124,9 +124,19 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
 			FLOAT_COLOR* pItem = &pRow[arrx + i];
-			if(pItem->r) r += logf(pItem->r) * params.fLogColorScale;
-			if(pItem->b) b += logf(pItem->b) * params.fLogColorScale;
-			if(pItem->g) g += logf(pItem->g) * params.fLogColorScale;
+			if (!pItem->IsZero())
+			{
+				FLOAT_COLOR clr = *pItem;
+				clr.LogScale(params.fLogColorScale);
+				float h, s, v;
+				clr.ToHSV(h, s, v);
+				v = powf(v, params.fValuePower);
+				if (params.fSaturPower) s = powf(s, params.fSaturPower);
+				clr.FromHSV(h, s, v);
+				r += clr.r;
+				g += clr.g;
+				b += clr.b;
+			}
 		}
 	}
 	pixel[0] = r / (float)(iAntiAlias * iAntiAlias);
