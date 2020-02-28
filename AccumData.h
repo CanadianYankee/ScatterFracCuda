@@ -62,6 +62,6 @@ struct ACCUM_STATS
 // Parameters passed to each render thread
 struct RENDER_PARAMS
 {
-	float fCountScale;	// Scale factor for count (based on MaxCount)
-	UINT iAntiAlias;	// AntiAlias factor
+	float fLogCountScale;	// Scale factor for count (based on MaxCount)
+	UINT iAntiAlias;		// AntiAlias factor
 };
