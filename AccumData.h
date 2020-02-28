@@ -1,6 +1,7 @@
 #pragma once
 
 #include "randgen.h"
+#include "FloatColor.h"
 
 inline void CudaFree(PVOID& ptr) { if (ptr) { cudaFree(ptr); ptr = nullptr; } }
 
@@ -15,8 +16,12 @@ struct GPU_ARRAY_2D
 	UINT nPitch;
 };
 
-// Each element in the 2D accum array is of type FLOAT_COLOR
-#include "FloatColor.h"
+// Each element in the 2D accum array has a count and a color
+struct ACCUM
+{
+	UINT nCount;
+	FLOAT_COLOR clr;
+};
 
 // Each thread gets an iterator, which has a random number generator, a position, and a color
 struct ITERATOR

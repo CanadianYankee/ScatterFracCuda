@@ -39,9 +39,9 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	m_AccumArray.nHeight *= m_config.AntiAlias();
 
 	size_t pitch;
-	err = cudaMallocPitch(&(m_AccumArray.pArray), &pitch, m_AccumArray.nWidth * sizeof(FLOAT_COLOR), m_AccumArray.nHeight);
+	err = cudaMallocPitch(&(m_AccumArray.pArray), &pitch, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
 	if (err != cudaSuccess) return E_FAIL;
-	err = cudaMemset2D(m_AccumArray.pArray, pitch, 0, m_AccumArray.nWidth * sizeof(FLOAT_COLOR), m_AccumArray.nHeight);
+	err = cudaMemset2D(m_AccumArray.pArray, pitch, 0, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
 	if (err != cudaSuccess) return E_FAIL;
 	m_AccumArray.nPitch = (UINT)pitch;
 

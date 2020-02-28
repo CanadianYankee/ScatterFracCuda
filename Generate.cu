@@ -49,17 +49,18 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 			int j = int(iter->y * params.rect.fScale + params.rect.fOffsetY);
 			if (i >= 0 && i < (int)arrAccum.nWidth && j >= 0 && j < (int)arrAccum.nHeight)
 			{
-				FLOAT_COLOR* element = (FLOAT_COLOR*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(FLOAT_COLOR));
+				ACCUM* element = (ACCUM*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(ACCUM));
+				UINT nCount = atomicAdd(&(element->nCount), 1);
 				if (params.bHitPercent)
 				{
 					atomicAdd(&(accumStats->nHitRect), 1);
-					if (element->IsZero())
+					if (nCount == 0)
 						atomicAdd(&(accumStats->nNewHits), 1);
 				}
-				atomicAdd(&(element->r), iter->clr.r);
-				atomicAdd(&(element->g), iter->clr.g);
-				atomicAdd(&(element->b), iter->clr.b);
-				atomicMax(&(accumStats->nMaxColorElement), (UINT)ceil(element->Max()));
+				atomicAdd(&(element->clr.r), iter->clr.r);
+				atomicAdd(&(element->clr.g), iter->clr.g);
+				atomicAdd(&(element->clr.b), iter->clr.b);
+				atomicMax(&(accumStats->nMaxColorElement), (UINT)ceil(element->clr.Max()));
 			}
 		}
 	}
@@ -120,13 +121,13 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 	float r = 0.0f, g = 0.0f, b = 0.0f;
 	for (UINT j = 0; j < iAntiAlias; j++)
 	{
-		FLOAT_COLOR* pRow = (FLOAT_COLOR*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
+		ACCUM* pRow = (ACCUM*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
-			FLOAT_COLOR* pItem = &pRow[arrx + i];
-			if (!pItem->IsZero())
+			ACCUM* pItem = &pRow[arrx + i];
+			if (!pItem->clr.IsZero())
 			{
-				FLOAT_COLOR clr = *pItem;
+				FLOAT_COLOR clr = pItem->clr;
 				clr.LogScale(params.fLogColorScale);
 				float h, s, v;
 				clr.ToHSV(h, s, v);
