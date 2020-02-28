@@ -26,7 +26,7 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 	ACCUM_STATS* accumStats = (ACCUM_STATS*)pStats;
 
 	if (accumStats->bAbort) return;
-
+	
 	// On intialize, seed the random number generators
 	if (params.bInit)
 	{
@@ -49,18 +49,17 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 			int j = int(iter->y * params.rect.fScale + params.rect.fOffsetY);
 			if (i >= 0 && i < (int)arrAccum.nWidth && j >= 0 && j < (int)arrAccum.nHeight)
 			{
-				COUNT_COLOR* element = (COUNT_COLOR*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(COUNT_COLOR));
-				UINT old = atomicAdd(&(element->nCount), 1);
-				atomicExch(&(element->r), iter->r);
-				atomicExch(&(element->g), iter->g);
-				atomicExch(&(element->b), iter->b);
-				atomicMax(&(accumStats->nMaxCount), old + 1);
+				FLOAT_COLOR* element = (FLOAT_COLOR*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(FLOAT_COLOR));
 				if (params.bHitPercent)
 				{
 					atomicAdd(&(accumStats->nHitRect), 1);
-					if (old == 0)
+					if (element->IsZero())
 						atomicAdd(&(accumStats->nNewHits), 1);
 				}
+				atomicAdd(&(element->r), iter->clr.r);
+				atomicAdd(&(element->g), iter->clr.g);
+				atomicAdd(&(element->b), iter->clr.b);
+				atomicMax(&(accumStats->nMaxColorElement), (UINT)element->Max());
 			}
 		}
 	}
@@ -78,34 +77,32 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 __device__ void transform(ITERATOR* iter)
 {
 	float rnd = iter->rand.frand();
-	float r, g, b;
+	FLOAT_COLOR clr;
 	if (rnd < 0.33333f)
 	{
 		iter->x = iter->x * 0.5f;
 		iter->y = iter->y * 0.5f + 0.5f;
-		r = 1.0f;
-		g = 1.0f;
-		b = 0.0f;
+		clr.r = 1.0f;
+		clr.g = 1.0f;
+		clr.b = 0.0f;
 	}
 	else if (rnd < 0.66666f)
 	{
 		iter->x = iter->x * 0.5f + 0.433f;
 		iter->y = iter->y * 0.5f - 0.25f;
-		r = 1.0f;
-		g = 0.0f;
-		b = 1.0f;
+		clr.r = 1.0f;
+		clr.g = 0.0f;
+		clr.b = 1.0f;
 	}
 	else
 	{
 		iter->x = iter->x * 0.5f - 0.433f;
 		iter->y = iter->y * 0.5f - 0.25f;
-		r = 0.0f;
-		g = 1.0f;
-		b = 1.0f;
+		clr.r = 0.0f;
+		clr.g = 1.0f;
+		clr.b = 1.0f;
 	}
-	iter->r = (3.0f * iter->r + r) / 4.0;
-	iter->g = (3.0f * iter->g + g) / 4.0;
-	iter->b = (3.0f * iter->b + b) / 4.0;
+	iter->clr.Tint(clr, 3.0f);
 }
 
 __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum)
@@ -123,13 +120,13 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 	float r = 0.0f, g = 0.0f, b = 0.0f;
 	for (UINT j = 0; j < iAntiAlias; j++)
 	{
-		COUNT_COLOR* pRow = (COUNT_COLOR*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
+		FLOAT_COLOR* pRow = (FLOAT_COLOR*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
-			COUNT_COLOR* pItem = &pRow[arrx + i];
-			if(pItem->r) r += pItem->r * logf(pItem->nCount) * params.fLogCountScale;
-			if(pItem->b) b += pItem->b * logf(pItem->nCount) * params.fLogCountScale;
-			if(pItem->g) g += pItem->g * logf(pItem->nCount) * params.fLogCountScale;
+			FLOAT_COLOR* pItem = &pRow[arrx + i];
+			if(pItem->r) r += logf(pItem->r) * params.fLogColorScale;
+			if(pItem->b) b += logf(pItem->b) * params.fLogColorScale;
+			if(pItem->g) g += logf(pItem->g) * params.fLogColorScale;
 		}
 	}
 	pixel[0] = r / (float)(iAntiAlias * iAntiAlias);
