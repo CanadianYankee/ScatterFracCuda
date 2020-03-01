@@ -15,6 +15,7 @@ public:
 
 	BOOL Initialize(HINSTANCE hInstance, const WCHAR* szTitle, const WCHAR* szWindowClass, int nCmdShow);
 	LRESULT WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+	int Run(HINSTANCE hInstance);
 
 protected:
 	struct VS_VARIABLES

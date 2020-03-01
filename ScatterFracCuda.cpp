@@ -32,21 +32,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         return FALSE;
     }
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_SCATTERFRACCUDA));
-
-    MSG msg;
-
-    // Main message loop:
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
+	// Run the main message loop
+	int iRet = pWnd->Run(hInstance);
 
 	CGenerateWnd::DestroyMainWnd();
 
-    return (int) msg.wParam;
+    return iRet;
 }

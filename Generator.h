@@ -12,6 +12,7 @@ public:
 
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL &bFailed);
 	HRESULT Iterate(BOOL bRender = TRUE);
+	bool IsIncomplete() { return m_nIterComplete < m_nTotalIter; }
 	float DrawAspectRatio() { return m_pTexture->AspectRatio(); }
 	void LoadDrawPS(ComPtr<ID3D11DeviceContext> pD3DContext) { m_pTexture->LoadPS(pD3DContext); } 
 
@@ -25,4 +26,6 @@ protected:
 	const UINT m_nAccumThreads = 128;
 	const UINT m_nAccumBlocks = 128;
 	UINT m_nTotalIter;
+	UINT m_nCycleIter;
+	UINT m_nIterComplete;
 };

@@ -96,9 +96,6 @@ BOOL CGenerateWnd::Initialize(HINSTANCE hInstance, const WCHAR* szTitle, const W
     hr = OnResize();
     if (FAILED(hr)) return FALSE;
 
-    hr = GenerateScene();
-    if (FAILED(hr)) return FALSE;
-
     UpdateWindow(m_hWnd);
 
     return SUCCEEDED(hr);
@@ -309,6 +306,38 @@ HRESULT CGenerateWnd::RenderScene()
     hr = m_pSwapChain->Present(1, 0);
 
     return hr;
+}
+
+int CGenerateWnd::Run(HINSTANCE hInstance)
+{
+	MSG msg;
+	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_SCATTERFRACCUDA));
+
+	// Main message loop:
+	do
+	{
+		// If there are Window messages then process them.
+		if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
+		{
+			if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+			{
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+		}
+		// Otherwise, let the generator do any necessary  its thing
+		else
+		{
+			if (m_pGenerator->IsIncomplete())
+			{
+				m_pGenerator->Iterate();
+				RenderScene();
+			}
+		}
+		Sleep(0);
+	} while (msg.message != WM_QUIT);
+
+	return (int)(msg.wParam);
 }
 
 void CGenerateWnd::Cleanup()

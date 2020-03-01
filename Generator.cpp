@@ -8,6 +8,8 @@ CGenerator::CGenerator(const CONFIG_DATA &config) :
 	m_config(config)
 	, m_pAccumStats(nullptr)
 	, m_nTotalIter(0)
+	, m_nCycleIter(0)
+	, m_nIterComplete(0)
 {
 
 }
@@ -89,6 +91,8 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	}
 
 	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * m_AccumArray.nHeight * m_AccumArray.nWidth / 25;
+	m_nCycleIter = m_nTotalIter / (16 * m_config.iIterationLevel);
+	m_nIterComplete = 0;
 
 	return hr;
 }
@@ -98,33 +102,36 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 	HRESULT hr = S_OK;
 	cudaError_t err = cudaSuccess;
 
-	ACCUM_PARAMS paramsAccum;
-	paramsAccum.nSteps = m_nTotalIter / (m_IterArray.nHeight * m_IterArray.nWidth);
-	paramsAccum.rect = m_rectScale;
-//	paramsAccum.bHitPercent = TRUE;
-	err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
-
-//	ACCUM_STATS *pAccumStats = (ACCUM_STATS*)m_pAccumStats;
-//	float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
-
-
-	if (bRender)
+	if (m_nIterComplete < m_nTotalIter)
 	{
-		GPU_ARRAY_2D texture;
-		err = m_pTexture->MapToCudaArray(texture);
-		if (err != cudaSuccess) return E_FAIL;
+		ACCUM_PARAMS paramsAccum;
+		paramsAccum.nSteps = max(1, m_nCycleIter / (m_IterArray.nHeight * m_IterArray.nWidth)); // m_nTotalIter / (m_IterArray.nHeight * m_IterArray.nWidth);
+		paramsAccum.rect = m_rectScale;
+		paramsAccum.bHitPercent = (m_nIterComplete == 0);
+		err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
+		m_nIterComplete += paramsAccum.nSteps * m_IterArray.nHeight * m_IterArray.nWidth;
 
-		RENDER_PARAMS paramsRender;
-		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats; 
-		paramsRender.fLogColorScale = 1.0f / logf((float)(pAccumStats->nMaxColorElement));
-		paramsRender.iAntiAlias = m_config.AntiAlias();
-		paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
-		paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
-		err = cuda_render_texture(paramsRender, texture, m_AccumArray);
-		if (err != cudaSuccess) return E_FAIL;
+		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
+		float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
+		
+		if (bRender)
+		{
+			GPU_ARRAY_2D texture;
+			err = m_pTexture->MapToCudaArray(texture);
+			if (err != cudaSuccess) return E_FAIL;
 
-		err = m_pTexture->UnmapFromCudaArray();
-		if (err != cudaSuccess) return E_FAIL;
+			RENDER_PARAMS paramsRender;
+			ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
+			paramsRender.fLogColorScale = 1.0f / logf((float)(pAccumStats->nMaxColorElement));
+			paramsRender.iAntiAlias = m_config.AntiAlias();
+			paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
+			paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
+			err = cuda_render_texture(paramsRender, texture, m_AccumArray);
+			if (err != cudaSuccess) return E_FAIL;
+
+			err = m_pTexture->UnmapFromCudaArray();
+			if (err != cudaSuccess) return E_FAIL;
+		}
 	}
 
 	return hr;
