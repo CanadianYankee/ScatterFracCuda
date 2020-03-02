@@ -39,6 +39,8 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	m_AccumArray.nHeight = m_config.nDrawHeight;
 	m_AccumArray.nWidth *= m_config.AntiAlias();
 	m_AccumArray.nHeight *= m_config.AntiAlias();
+	m_AccumArray.nWidth += m_config.KernelRadius() * 2;
+	m_AccumArray.nHeight += m_config.KernelRadius() * 2;
 
 	size_t pitch;
 	err = cudaMallocPitch(&(m_AccumArray.pArray), &pitch, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
@@ -124,6 +126,7 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 			ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
 			paramsRender.fLogColorScale = 1.0f / logf((float)(pAccumStats->nMaxColorElement));
 			paramsRender.iAntiAlias = m_config.AntiAlias();
+			paramsRender.iKernelRadius = m_config.KernelRadius();
 			paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
 			paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
 			err = cuda_render_texture(paramsRender, texture, m_AccumArray);

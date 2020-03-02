@@ -57,10 +57,10 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 					if (nCount == 0)
 						atomicAdd(&(accumStats->nNewHits), 1);
 				}
-				atomicAdd(&(element->clr.r), iter->clr.r);
-				atomicAdd(&(element->clr.g), iter->clr.g);
-				atomicAdd(&(element->clr.b), iter->clr.b);
-				atomicMax(&(accumStats->nMaxColorElement), (UINT)ceil(element->clr.Max()));
+				atomicAdd(&(element->clrAccum.r), iter->clr.r);
+				atomicAdd(&(element->clrAccum.g), iter->clr.g);
+				atomicAdd(&(element->clrAccum.b), iter->clr.b);
+				atomicMax(&(accumStats->nMaxColorElement), (UINT)ceil(element->clrAccum.Max()));
 			}
 		}
 	}
@@ -79,7 +79,7 @@ __device__ void transform(ITERATOR* iter)
 {
 	float rnd = iter->rand.frand();
 	FLOAT_COLOR clr;
-	if (rnd < 0.33333f)
+	if (rnd < 0.5f)
 	{
 		iter->x = iter->x * 0.5f;
 		iter->y = iter->y * 0.5f + 0.5f;
@@ -87,7 +87,7 @@ __device__ void transform(ITERATOR* iter)
 		clr.g = 1.0f;
 		clr.b = 0.0f;
 	}
-	else if (rnd < 0.66666f)
+	else if (rnd < 0.9f)
 	{
 		iter->x = iter->x * 0.5f + 0.433f;
 		iter->y = iter->y * 0.5f - 0.25f;
@@ -106,6 +106,27 @@ __device__ void transform(ITERATOR* iter)
 	iter->clr.Tint(clr, 3.0f);
 }
 
+__global__ void rescale_accum(const RENDER_PARAMS params, GPU_ARRAY_2D arrAccum)
+{
+	UINT arrx = blockIdx.x * blockDim.x + threadIdx.x;
+	UINT arry = blockIdx.y * blockDim.y + threadIdx.y;
+	if (arrx >= arrAccum.nWidth || arry >= arrAccum.nHeight) return;
+
+	ACCUM* pRow = (ACCUM*)((unsigned char*)arrAccum.pArray + arry * arrAccum.nPitch);
+	ACCUM* pItem = &pRow[arrx];
+	if (!pItem->clrAccum.IsZero())
+	{
+		FLOAT_COLOR clr = pItem->clrAccum;
+		clr.LogScale(params.fLogColorScale);
+		float h, s, v;
+		clr.ToHSV(h, s, v);
+		v = powf(v, params.fValuePower);
+		if (params.fSaturPower) s = powf(s, params.fSaturPower);
+		clr.FromHSV(h, s, v);
+		pItem->clrFinal = clr;
+	}
+}
+
 __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum)
 {
 	UINT texx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -114,9 +135,10 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 
 	float *pixel = (float*)((unsigned char *)(texture.pArray) + texy * texture.nPitch) + 4 * texx;
 
-	int iAntiAlias = max(1, params.iAntiAlias);
-	UINT arrx = texx * iAntiAlias;
-	UINT arry = texy * iAntiAlias;
+	UINT iAntiAlias = max(1, params.iAntiAlias);
+	UINT iKernelRadius = max(0, params.iKernelRadius);
+	UINT arrx = iKernelRadius + texx * iAntiAlias;
+	UINT arry = iKernelRadius + texy * iAntiAlias;
 
 	float r = 0.0f, g = 0.0f, b = 0.0f;
 	for (UINT j = 0; j < iAntiAlias; j++)
@@ -125,18 +147,11 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
 			ACCUM* pItem = &pRow[arrx + i];
-			if (!pItem->clr.IsZero())
+			if (!pItem->clrFinal.IsZero())
 			{
-				FLOAT_COLOR clr = pItem->clr;
-				clr.LogScale(params.fLogColorScale);
-				float h, s, v;
-				clr.ToHSV(h, s, v);
-				v = powf(v, params.fValuePower);
-				if (params.fSaturPower) s = powf(s, params.fSaturPower);
-				clr.FromHSV(h, s, v);
-				r += clr.r;
-				g += clr.g;
-				b += clr.b;
+				r += pItem->clrFinal.r;
+				g += pItem->clrFinal.g;
+				b += pItem->clrFinal.b;
 			}
 		}
 	}
@@ -175,7 +190,18 @@ cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& textu
 	cudaEventCreate(&stop);
 
 	dim3 Db = dim3(16, 16);   
-	dim3 Dg = dim3(((UINT)texture.nWidth + Db.x - 1) / Db.x, ((UINT)texture.nHeight + Db.y - 1) / Db.y);
+	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
+	cudaEventRecord(start);
+	rescale_accum << <Dg, Db >> > (params, arrAccum);
+	cudaEventRecord(stop);
+	error = cudaGetLastError();
+	if (error != cudaSuccess) return error;
+	cudaEventSynchronize(stop);
+	error = cudaGetLastError();
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+
+	Dg = dim3(((UINT)texture.nWidth + Db.x - 1) / Db.x, ((UINT)texture.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
 	render_texture <<<Dg, Db>>> (params, texture, arrAccum);
@@ -185,7 +211,7 @@ cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& textu
 
 	cudaEventSynchronize(stop);
 	error = cudaGetLastError();
-	float milliseconds = 0;
+	milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
 
 	return error;

@@ -20,7 +20,8 @@ struct GPU_ARRAY_2D
 struct ACCUM
 {
 	UINT nCount;
-	FLOAT_COLOR clr;
+	FLOAT_COLOR clrAccum;
+	FLOAT_COLOR clrFinal;
 };
 
 // Each thread gets an iterator, which has a random number generator, a position, and a color
@@ -64,6 +65,7 @@ struct RENDER_PARAMS
 {
 	float fLogColorScale;	// Scale factor for count (based on MaxColorElement)
 	UINT iAntiAlias;		// AntiAlias factor
+	UINT iKernelRadius;		// Kernel blur size
 	float fValuePower;		// Value power
 	float fSaturPower;		// Saturation power
 };
