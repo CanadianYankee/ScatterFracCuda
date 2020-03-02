@@ -23,6 +23,12 @@ struct FLOAT_COLOR
 	float r, g, b;
 };
 
+__device__
+inline FLOAT_COLOR operator*(float t, const FLOAT_COLOR& clr)
+{
+	return FLOAT_COLOR(t * clr.r, t * clr.g, t * clr.b);
+}
+
 __device__ inline void FLOAT_COLOR::ToHSV(float& h, float& s, float& v)
 {
 	float cmax = Max();

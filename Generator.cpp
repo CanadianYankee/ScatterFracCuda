@@ -2,7 +2,7 @@
 #include "Generator.h"
 
 extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_ARRAY_2D& arrAccum, PVOID pStats);
-extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, GPU_ARRAY_2D &texture, GPU_ARRAY_2D &arrAccum);
+extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, GPU_ARRAY_2D &texture, GPU_ARRAY_2D& arrFiltered, GPU_ARRAY_2D &arrAccum);
 
 CGenerator::CGenerator(const CONFIG_DATA &config) : 
 	m_config(config)
@@ -17,6 +17,7 @@ CGenerator::CGenerator(const CONFIG_DATA &config) :
 CGenerator::~CGenerator()
 {
 	CudaFree(m_AccumArray.pArray);
+	CudaFree(m_FilteredArray.pArray);
 	CudaFree(m_pAccumStats);
 	CudaFree(m_IterArray.pArray);
 	m_pTexture.reset();
@@ -37,10 +38,10 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	assert(!m_AccumArray.pArray);
 	m_AccumArray.nWidth = m_config.nDrawWidth;
 	m_AccumArray.nHeight = m_config.nDrawHeight;
-	m_AccumArray.nWidth *= m_config.AntiAlias();
-	m_AccumArray.nHeight *= m_config.AntiAlias();
 	m_AccumArray.nWidth += m_config.KernelRadius() * 2;
 	m_AccumArray.nHeight += m_config.KernelRadius() * 2;
+	m_AccumArray.nWidth *= m_config.AntiAlias();
+	m_AccumArray.nHeight *= m_config.AntiAlias();
 
 	size_t pitch;
 	err = cudaMallocPitch(&(m_AccumArray.pArray), &pitch, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
@@ -48,6 +49,19 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	err = cudaMemset2D(m_AccumArray.pArray, pitch, 0, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
 	if (err != cudaSuccess) return E_FAIL;
 	m_AccumArray.nPitch = (UINT)pitch;
+
+	// Create the array for the filtered and log-scaled results
+	assert(!m_FilteredArray.pArray);
+	m_FilteredArray.nWidth = m_config.nDrawWidth;
+	m_FilteredArray.nHeight = m_config.nDrawHeight;
+	m_FilteredArray.nWidth *= m_config.AntiAlias();
+	m_FilteredArray.nHeight *= m_config.AntiAlias();
+
+	err = cudaMallocPitch(&(m_FilteredArray.pArray), &pitch, m_FilteredArray.nWidth * sizeof(FILTERED), m_FilteredArray.nHeight);
+	if (err != cudaSuccess) return E_FAIL;
+	err = cudaMemset2D(m_FilteredArray.pArray, pitch, 0, m_FilteredArray.nWidth * sizeof(FILTERED), m_FilteredArray.nHeight);
+	if (err != cudaSuccess) return E_FAIL;
+	m_FilteredArray.nPitch = (UINT)pitch;
 
 	// Stats gathered during generation (managed memory for easy CPU access
 	err = cudaMallocManaged(&m_pAccumStats, sizeof(UINT));
@@ -124,12 +138,14 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 
 			RENDER_PARAMS paramsRender;
 			ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
-			paramsRender.fLogColorScale = 1.0f / logf((float)(pAccumStats->nMaxColorElement));
+			paramsRender.fLogColorScale = 1.0f / log((float)(pAccumStats->nMaxColorElement));
 			paramsRender.iAntiAlias = m_config.AntiAlias();
 			paramsRender.iKernelRadius = m_config.KernelRadius();
+			paramsRender.fFilterScale = m_config.KernelRadius() ?
+				0.25f * (float)m_config.KernelRadius() * log((float)(pAccumStats->nMaxCount)) : 0.0f;
 			paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
 			paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
-			err = cuda_render_texture(paramsRender, texture, m_AccumArray);
+			err = cuda_render_texture(paramsRender, texture, m_FilteredArray, m_AccumArray);
 			if (err != cudaSuccess) return E_FAIL;
 
 			err = m_pTexture->UnmapFromCudaArray();

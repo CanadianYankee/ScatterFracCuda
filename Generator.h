@@ -20,6 +20,7 @@ protected:
 	CONFIG_DATA m_config;
 	std::unique_ptr<CDX11CudaTexture> m_pTexture;
 	GPU_ARRAY_2D m_AccumArray;
+	GPU_ARRAY_2D m_FilteredArray;
 	GPU_ARRAY_2D m_IterArray;
 	PVOID m_pAccumStats;
 	RECT_SCALE m_rectScale;

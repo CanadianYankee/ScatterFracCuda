@@ -51,6 +51,7 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 			{
 				ACCUM* element = (ACCUM*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(ACCUM));
 				UINT nCount = atomicAdd(&(element->nCount), 1);
+				atomicMax(&(accumStats->nMaxCount), nCount);
 				if (params.bHitPercent)
 				{
 					atomicAdd(&(accumStats->nHitRect), 1);
@@ -106,28 +107,102 @@ __device__ void transform(ITERATOR* iter)
 	iter->clr.Tint(clr, 3.0f);
 }
 
-__global__ void rescale_accum(const RENDER_PARAMS params, GPU_ARRAY_2D arrAccum)
+// Checks for out-of-range and does atomic adds
+__device__ inline void AddFiltered(GPU_ARRAY_2D& arrFiltered, int x, int y, const FLOAT_COLOR& clr)
 {
-	UINT arrx = blockIdx.x * blockDim.x + threadIdx.x;
-	UINT arry = blockIdx.y * blockDim.y + threadIdx.y;
-	if (arrx >= arrAccum.nWidth || arry >= arrAccum.nHeight) return;
-
-	ACCUM* pRow = (ACCUM*)((unsigned char*)arrAccum.pArray + arry * arrAccum.nPitch);
-	ACCUM* pItem = &pRow[arrx];
-	if (!pItem->clrAccum.IsZero())
+	if (x >= 0 && x < (int)(arrFiltered.nWidth) && y >= 0 && y < (int)(arrFiltered.nHeight))
 	{
-		FLOAT_COLOR clr = pItem->clrAccum;
-		clr.LogScale(params.fLogColorScale);
-		float h, s, v;
-		clr.ToHSV(h, s, v);
-		v = powf(v, params.fValuePower);
-		if (params.fSaturPower) s = powf(s, params.fSaturPower);
-		clr.FromHSV(h, s, v);
-		pItem->clrFinal = clr;
+		FILTERED* pFiltered = (FILTERED*)((unsigned char*)(arrFiltered.pArray) + x * arrFiltered.nPitch) + y;
+		if (clr.r) atomicAdd(&(pFiltered->r), clr.r);
+		if (clr.g) atomicAdd(&(pFiltered->g), clr.g);
+		if (clr.b) atomicAdd(&(pFiltered->b), clr.b);
 	}
 }
 
-__global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum)
+__device__ inline float gaussian(float x, float stddev)
+{
+	float x0 = x / stddev;
+	return exp(-0.5f * x0 * x0) / sqrt(2.0f * stddev);
+}
+
+__global__ void rescale_filter(const RENDER_PARAMS params, GPU_ARRAY_2D arrFiltered, GPU_ARRAY_2D arrAccum)
+{
+	int arrx = blockIdx.x * blockDim.x + threadIdx.x;
+	int arry = blockIdx.y * blockDim.y + threadIdx.y;
+	if (arrx >= arrAccum.nWidth || arry >= arrAccum.nHeight) return;
+
+	ACCUM* pAccum = (ACCUM*)((unsigned char*)(arrAccum.pArray) + arry * arrAccum.nPitch + arrx * sizeof(ACCUM));
+	int rad = params.iKernelRadius * params.iAntiAlias;
+	int fx = arrx - rad;
+	int fy = arry - rad;
+	float fCutoff = rad ? 0.001f / (float)(rad * rad) : 0.0f;
+	if (!pAccum->clrAccum.IsZero())
+	{
+		FLOAT_COLOR clr = pAccum->clrAccum;
+		clr.LogScale(params.fLogColorScale);
+		if (!clr.IsZero())
+		{
+			float h, s, v;
+			clr.ToHSV(h, s, v);
+			v = powf(v, params.fValuePower);
+			if (params.fSaturPower) s = powf(s, params.fSaturPower);
+			clr.FromHSV(h, s, v);
+			if (rad)
+			{
+				float fHalfRad = 0.5f * (float)rad;
+				float stddev = params.fFilterScale / log((float)(pAccum->nCount + 1));
+				if (stddev > fHalfRad) stddev = fHalfRad;
+				if (stddev < 0.5f)
+				{
+					// No dispersion
+					AddFiltered(arrFiltered, fx, fy, clr);
+				}
+				// Calculate one-eighth(ish) of the filter and use symmetry to get the rest
+				for (int ix = 0; ix <= rad; ix++)
+				{
+					float attx = gaussian((float)ix, stddev);
+					for (int iy = 0; iy <= ix; iy++)
+					{
+						float att = attx * gaussian((float)iy, stddev);
+						if (att < fCutoff) continue;	// Don't bother if numbers are tiny
+						FLOAT_COLOR attClr = att * clr;
+						AddFiltered(arrFiltered, fx + ix, fy + iy, attClr);
+						if (ix || iy)
+						{
+							if (iy == 0)
+							{
+								AddFiltered(arrFiltered, fx - ix, fy, attClr);
+								AddFiltered(arrFiltered, fx, fy + ix, attClr);
+								AddFiltered(arrFiltered, fx, fy - ix, attClr);
+							}
+							else
+							{
+								AddFiltered(arrFiltered, fx - ix, fy + iy, attClr);
+								AddFiltered(arrFiltered, fx + ix, fy - iy, attClr);
+								AddFiltered(arrFiltered, fx - ix, fy - iy, attClr);
+								if (ix != iy)
+								{
+									AddFiltered(arrFiltered, fx + iy, fy + ix, attClr);
+									AddFiltered(arrFiltered, fx - iy, fy + ix, attClr);
+									AddFiltered(arrFiltered, fx + iy, fy - ix, attClr);
+									AddFiltered(arrFiltered, fx - iy, fy - ix, attClr);
+								}
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				// Just scaling, no actual filtering
+				FILTERED* pFiltered = (FILTERED*)((unsigned char*)(arrFiltered.pArray) + fy * arrFiltered.nPitch + fx * sizeof(FILTERED));
+				*pFiltered = clr;
+			}
+		}
+	}
+}
+
+__global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrFiltered)
 {
 	UINT texx = blockIdx.x * blockDim.x + threadIdx.x;
 	UINT texy = blockIdx.y * blockDim.y + threadIdx.y;
@@ -136,22 +211,21 @@ __global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture,
 	float *pixel = (float*)((unsigned char *)(texture.pArray) + texy * texture.nPitch) + 4 * texx;
 
 	UINT iAntiAlias = max(1, params.iAntiAlias);
-	UINT iKernelRadius = max(0, params.iKernelRadius);
-	UINT arrx = iKernelRadius + texx * iAntiAlias;
-	UINT arry = iKernelRadius + texy * iAntiAlias;
+	UINT arrx = texx * iAntiAlias;
+	UINT arry = texy * iAntiAlias;
 
 	float r = 0.0f, g = 0.0f, b = 0.0f;
 	for (UINT j = 0; j < iAntiAlias; j++)
 	{
-		ACCUM* pRow = (ACCUM*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
+		FILTERED* pRow = (FILTERED*)((unsigned char *)arrFiltered.pArray + (arry + j) * arrFiltered.nPitch);
 		for (UINT i = 0; i < iAntiAlias; i++)
 		{
-			ACCUM* pItem = &pRow[arrx + i];
-			if (!pItem->clrFinal.IsZero())
+			FILTERED* pItem = &pRow[arrx + i];
+			if (!pItem->IsZero())
 			{
-				r += pItem->clrFinal.r;
-				g += pItem->clrFinal.g;
-				b += pItem->clrFinal.b;
+				r += pItem->r;
+				g += pItem->g;
+				b += pItem->b;
 			}
 		}
 	}
@@ -182,17 +256,21 @@ cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_
 	return error;
 }
 
-cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum)
+cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrFiltered, GPU_ARRAY_2D& arrAccum)
 {
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-
+	
+	// First run the log-scale and density estimation to go from arrAccum -> arrFiltered
 	dim3 Db = dim3(16, 16);   
 	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
+	error = cudaMemset2D(arrFiltered.pArray, arrFiltered.nPitch, 0, arrFiltered.nWidth * sizeof(FILTERED), arrFiltered.nHeight);
+	if (error != cudaSuccess) return error;
+
 	cudaEventRecord(start);
-	rescale_accum << <Dg, Db >> > (params, arrAccum);
+	rescale_filter << <Dg, Db >> > (params, arrFiltered, arrAccum);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
@@ -200,11 +278,13 @@ cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& textu
 	error = cudaGetLastError();
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
+	if (error != cudaSuccess) return error;
 
+	// Next, do anti-aliasing and final conversion to texture to go from arrFiltered -> texture
 	Dg = dim3(((UINT)texture.nWidth + Db.x - 1) / Db.x, ((UINT)texture.nHeight + Db.y - 1) / Db.y);
 
 	cudaEventRecord(start);
-	render_texture <<<Dg, Db>>> (params, texture, arrAccum);
+	render_texture <<<Dg, Db>>> (params, texture, arrFiltered);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
