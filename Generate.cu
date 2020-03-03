@@ -112,7 +112,7 @@ __device__ inline void AddFiltered(GPU_ARRAY_2D& arrFiltered, int x, int y, cons
 {
 	if (x >= 0 && x < (int)(arrFiltered.nWidth) && y >= 0 && y < (int)(arrFiltered.nHeight))
 	{
-		FILTERED* pFiltered = (FILTERED*)((unsigned char*)(arrFiltered.pArray) + x * arrFiltered.nPitch) + y;
+		FILTERED* pFiltered = (FILTERED*)((unsigned char*)(arrFiltered.pArray) + y * arrFiltered.nPitch) + x;
 		if (clr.r) atomicAdd(&(pFiltered->r), clr.r);
 		if (clr.g) atomicAdd(&(pFiltered->g), clr.g);
 		if (clr.b) atomicAdd(&(pFiltered->b), clr.b);
@@ -157,35 +157,38 @@ __global__ void rescale_filter(const RENDER_PARAMS params, GPU_ARRAY_2D arrFilte
 					// No dispersion
 					AddFiltered(arrFiltered, fx, fy, clr);
 				}
-				// Calculate one-eighth(ish) of the filter and use symmetry to get the rest
-				for (int ix = 0; ix <= rad; ix++)
+				else
 				{
-					float attx = gaussian((float)ix, stddev);
-					for (int iy = 0; iy <= ix; iy++)
+					// Calculate one-eighth(ish) of the filter and use symmetry to get the rest
+					for (int ix = 0; ix <= rad; ix++)
 					{
-						float att = attx * gaussian((float)iy, stddev);
-						if (att < fCutoff) continue;	// Don't bother if numbers are tiny
-						FLOAT_COLOR attClr = att * clr;
-						AddFiltered(arrFiltered, fx + ix, fy + iy, attClr);
-						if (ix || iy)
+						float attx = gaussian((float)ix, stddev);
+						for (int iy = 0; iy <= ix; iy++)
 						{
-							if (iy == 0)
+							float att = attx * gaussian((float)iy, stddev);
+							if (att < fCutoff) continue;	// Don't bother if numbers are tiny
+							FLOAT_COLOR attClr = att * clr;
+							AddFiltered(arrFiltered, fx + ix, fy + iy, attClr);
+							if (ix || iy)
 							{
-								AddFiltered(arrFiltered, fx - ix, fy, attClr);
-								AddFiltered(arrFiltered, fx, fy + ix, attClr);
-								AddFiltered(arrFiltered, fx, fy - ix, attClr);
-							}
-							else
-							{
-								AddFiltered(arrFiltered, fx - ix, fy + iy, attClr);
-								AddFiltered(arrFiltered, fx + ix, fy - iy, attClr);
-								AddFiltered(arrFiltered, fx - ix, fy - iy, attClr);
-								if (ix != iy)
+								if (iy == 0)
 								{
-									AddFiltered(arrFiltered, fx + iy, fy + ix, attClr);
-									AddFiltered(arrFiltered, fx - iy, fy + ix, attClr);
-									AddFiltered(arrFiltered, fx + iy, fy - ix, attClr);
-									AddFiltered(arrFiltered, fx - iy, fy - ix, attClr);
+									AddFiltered(arrFiltered, fx - ix, fy, attClr);
+									AddFiltered(arrFiltered, fx, fy + ix, attClr);
+									AddFiltered(arrFiltered, fx, fy - ix, attClr);
+								}
+								else
+								{
+									AddFiltered(arrFiltered, fx - ix, fy + iy, attClr);
+									AddFiltered(arrFiltered, fx + ix, fy - iy, attClr);
+									AddFiltered(arrFiltered, fx - ix, fy - iy, attClr);
+									if (ix != iy)
+									{
+										AddFiltered(arrFiltered, fx + iy, fy + ix, attClr);
+										AddFiltered(arrFiltered, fx - iy, fy + ix, attClr);
+										AddFiltered(arrFiltered, fx + iy, fy - ix, attClr);
+										AddFiltered(arrFiltered, fx - iy, fy - ix, attClr);
+									}
 								}
 							}
 						}

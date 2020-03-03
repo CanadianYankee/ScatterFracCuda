@@ -138,11 +138,11 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 
 			RENDER_PARAMS paramsRender;
 			ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
-			paramsRender.fLogColorScale = 1.0f / log((float)(pAccumStats->nMaxColorElement));
+			paramsRender.fLogColorScale = 1.0f / log((float)(pAccumStats->nMaxColorElement + 1.0f));
 			paramsRender.iAntiAlias = m_config.AntiAlias();
 			paramsRender.iKernelRadius = m_config.KernelRadius();
 			paramsRender.fFilterScale = m_config.KernelRadius() ?
-				0.25f * (float)m_config.KernelRadius() * log((float)(pAccumStats->nMaxCount)) : 0.0f;
+				0.1f * (float)m_config.KernelRadius() * log((float)(pAccumStats->nMaxCount)) : 0.0f;
 			paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
 			paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
 			err = cuda_render_texture(paramsRender, texture, m_FilteredArray, m_AccumArray);

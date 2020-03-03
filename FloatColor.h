@@ -13,9 +13,9 @@ struct FLOAT_COLOR
 		b = (frac * b + clr.b) / (frac + 1.0f);
 	}
 	__device__ void LogScale(float fLogScale) {
-		r = r ? max(0.0f, logf(r) * fLogScale) : 0;
-		g = g ? max(0.0f, logf(g) * fLogScale) : 0;
-		b = b ? max(0.0f, logf(b) * fLogScale) : 0;
+		r = r ? max(0.0f, logf(r + 1.0f) * fLogScale) : 0;
+		g = g ? max(0.0f, logf(g + 1.0f) * fLogScale) : 0;
+		b = b ? max(0.0f, logf(b + 1.0f) * fLogScale) : 0;
 	}
 	__device__ void ToHSV(float& h, float& s, float& v);
 	__device__ void FromHSV(float h, float s, float v);

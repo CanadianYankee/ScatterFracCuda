@@ -16,10 +16,10 @@ struct CONFIG_DATA
 	CONFIG_DATA() :
 		nDrawWidth(640)
 		, nDrawHeight(400)
-		, bAntiAlias(FALSE)
+		, bAntiAlias(TRUE)
 		, iAntiAliasLevel(3)
-		, bKernelBlur(FALSE)
-		, iKernelRadius(5)
+		, bKernelBlur(TRUE)
+		, iKernelRadius(9)
 		, fKernelAlpha(0.4f)
 		, iIterationLevel(8)
 		, fGammaValue(3.0f)
