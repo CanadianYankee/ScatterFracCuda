@@ -150,7 +150,7 @@ __global__ void rescale_filter(const RENDER_PARAMS params, GPU_ARRAY_2D arrFilte
 			if (rad)
 			{
 				float fHalfRad = 0.5f * (float)rad;
-				float stddev = params.fFilterScale / log((float)(pAccum->nCount + 1));
+				float stddev = params.fFilterScale / pow((float)(pAccum->nCount), params.fKernelAlpha);
 				if (stddev > fHalfRad) stddev = fHalfRad;
 				if (stddev < 0.5f)
 				{

@@ -142,7 +142,8 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 			paramsRender.iAntiAlias = m_config.AntiAlias();
 			paramsRender.iKernelRadius = m_config.KernelRadius();
 			paramsRender.fFilterScale = m_config.KernelRadius() ?
-				0.1f * (float)m_config.KernelRadius() * log((float)(pAccumStats->nMaxCount)) : 0.0f;
+				0.1f * (float)m_config.KernelRadius() * pow((float)(pAccumStats->nMaxCount), m_config.fKernelAlpha) : 0.0f;
+			paramsRender.fKernelAlpha = m_config.fKernelAlpha;
 			paramsRender.fValuePower = 1.0f / m_config.fGammaValue;
 			paramsRender.fSaturPower = m_config.fGammaSatur ? 1.0f / m_config.fGammaSatur : 0.0f;
 			err = cuda_render_texture(paramsRender, texture, m_FilteredArray, m_AccumArray);

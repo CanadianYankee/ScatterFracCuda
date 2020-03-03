@@ -70,6 +70,7 @@ struct RENDER_PARAMS
 	float fFilterScale;		// Density filter scale (derived from MaxCount)
 	UINT iAntiAlias;		// AntiAlias factor
 	UINT iKernelRadius;		// Density estimation maximum kernel blur size
+	float fKernelAlpha;		// Kernel scaling alpha
 	float fValuePower;		// Value power
 	float fSaturPower;		// Saturation power
 };
