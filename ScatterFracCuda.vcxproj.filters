@@ -57,6 +57,9 @@
     <ClInclude Include="FloatColor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CudaArray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ScatterFracCuda.cpp">
@@ -98,6 +101,9 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Generate.cu">
+      <Filter>Cuda Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Render.cu">
       <Filter>Cuda Files</Filter>
     </CudaCompile>
   </ItemGroup>

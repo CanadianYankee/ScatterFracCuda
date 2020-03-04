@@ -1,8 +1,8 @@
 #include "framework.h"
 #include "Generator.h"
 
-extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_ARRAY_2D& arrAccum, PVOID pStats);
-extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, GPU_ARRAY_2D &texture, GPU_ARRAY_2D& arrFiltered, GPU_ARRAY_2D &arrAccum);
+extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats);
+extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, CCudaTexture2D &texture, CCudaArray2D<FILTERED>& arrFiltered, CCudaArray2D<ACCUM> &arrAccum);
 
 CGenerator::CGenerator(const CONFIG_DATA &config) : 
 	m_config(config)
@@ -16,10 +16,10 @@ CGenerator::CGenerator(const CONFIG_DATA &config) :
 
 CGenerator::~CGenerator()
 {
-	CudaFree(m_AccumArray.pArray);
-	CudaFree(m_FilteredArray.pArray);
+	m_AccumArray.Free();
+	m_FilteredArray.Free();
+	m_IterArray.Free();
 	CudaFree(m_pAccumStats);
-	CudaFree(m_IterArray.pArray);
 	m_pTexture.reset();
 
 	cudaDeviceReset();
@@ -35,33 +35,19 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	hr = m_pTexture->Initialize(pD3DDevice);
 
 	// Create the array of count/colors for fractal generation 
-	assert(!m_AccumArray.pArray);
-	m_AccumArray.nWidth = m_config.nDrawWidth;
-	m_AccumArray.nHeight = m_config.nDrawHeight;
-	m_AccumArray.nWidth += m_config.KernelRadius() * 2;
-	m_AccumArray.nHeight += m_config.KernelRadius() * 2;
-	m_AccumArray.nWidth *= m_config.AntiAlias();
-	m_AccumArray.nHeight *= m_config.AntiAlias();
+	UINT nAccWidth = m_config.nDrawWidth;
+	UINT nAccHeight = m_config.nDrawHeight;
+	nAccWidth += m_config.KernelRadius() * 2;
+	nAccHeight += m_config.KernelRadius() * 2;
+	nAccWidth *= m_config.AntiAlias();
+	nAccHeight *= m_config.AntiAlias();
 
-	size_t pitch;
-	err = cudaMallocPitch(&(m_AccumArray.pArray), &pitch, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
+	err = m_AccumArray.MallocPitch(nAccWidth, nAccHeight);
 	if (err != cudaSuccess) return E_FAIL;
-	err = cudaMemset2D(m_AccumArray.pArray, pitch, 0, m_AccumArray.nWidth * sizeof(ACCUM), m_AccumArray.nHeight);
-	if (err != cudaSuccess) return E_FAIL;
-	m_AccumArray.nPitch = (UINT)pitch;
 
 	// Create the array for the filtered and log-scaled results
-	assert(!m_FilteredArray.pArray);
-	m_FilteredArray.nWidth = m_config.nDrawWidth;
-	m_FilteredArray.nHeight = m_config.nDrawHeight;
-	m_FilteredArray.nWidth *= m_config.AntiAlias();
-	m_FilteredArray.nHeight *= m_config.AntiAlias();
-
-	err = cudaMallocPitch(&(m_FilteredArray.pArray), &pitch, m_FilteredArray.nWidth * sizeof(FILTERED), m_FilteredArray.nHeight);
+	err = m_FilteredArray.MallocPitch(m_config.nDrawWidth * m_config.AntiAlias(), m_config.nDrawHeight * m_config.AntiAlias());
 	if (err != cudaSuccess) return E_FAIL;
-	err = cudaMemset2D(m_FilteredArray.pArray, pitch, 0, m_FilteredArray.nWidth * sizeof(FILTERED), m_FilteredArray.nHeight);
-	if (err != cudaSuccess) return E_FAIL;
-	m_FilteredArray.nPitch = (UINT)pitch;
 
 	// Stats gathered during generation (managed memory for easy CPU access
 	err = cudaMallocManaged(&m_pAccumStats, sizeof(UINT));
@@ -70,12 +56,8 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	if (err != cudaSuccess) return E_FAIL;
 
 	// One random number generator for each thread
-	m_IterArray.nWidth = m_nAccumBlocks;
-	m_IterArray.nHeight = m_nAccumThreads;
-	UINT szIters = m_nAccumThreads * m_nAccumBlocks * sizeof(ITERATOR);
-	err = cudaMalloc(&(m_IterArray.pArray), szIters);
+	err = m_IterArray.Malloc(m_nIterBlocks * m_nIterThreads);
 	if (err != cudaSuccess) return E_FAIL;
-	err = cudaMemset(m_IterArray.pArray, 0, szIters);
 
 	// Initialize all of the generators and do a short run to find window scale
 	err = cudaDeviceSynchronize();
@@ -83,10 +65,12 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	ACCUM_PARAMS paramsAccum;
 	paramsAccum.bInit = TRUE;
 	paramsAccum.nSteps = 128;
+	paramsAccum.nThreads = m_nIterThreads;
+	paramsAccum.nBlocks = m_nIterBlocks;
 	ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
 	pAccumStats->xMin = pAccumStats->yMin = FLT_MAX;
 	pAccumStats->xMax = pAccumStats->yMax = -FLT_MAX;
-	GPU_ARRAY_2D arrDummy; 
+	CCudaArray2D<ACCUM> arrDummy; 
 	err = cuda_iterate(paramsAccum, m_IterArray, arrDummy, m_pAccumStats);
 	if (err != cudaSuccess) return E_FAIL;
 
@@ -101,12 +85,12 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 		float dy = (pAccumStats->yMax - pAccumStats->yMin) * 1.1f;
 		float cx = 0.5f * (pAccumStats->xMax + pAccumStats->xMin);
 		float cy = 0.5f * (pAccumStats->yMax + pAccumStats->yMin);
-		m_rectScale.fScale = min((float)m_AccumArray.nWidth / dx, (float)m_AccumArray.nHeight / dy);
-		m_rectScale.fOffsetX = 0.5f * (float)m_AccumArray.nWidth - m_rectScale.fScale * cx;
-		m_rectScale.fOffsetY = 0.5f * (float)m_AccumArray.nHeight - m_rectScale.fScale * cy;
+		m_rectScale.fScale = min((float)m_FilteredArray.Width() / dx, (float)m_FilteredArray.Height() / dy);
+		m_rectScale.fOffsetX = 0.5f * (float)m_FilteredArray.Width() - m_rectScale.fScale * cx;
+		m_rectScale.fOffsetY = 0.5f * (float)m_FilteredArray.Height() - m_rectScale.fScale * cy;
 	}
 
-	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * m_AccumArray.nHeight * m_AccumArray.nWidth / 25;
+	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * m_FilteredArray.Height() * m_FilteredArray.Width() / 25;
 	m_nCycleIter = m_nTotalIter / (16 * m_config.iIterationLevel);
 	m_nIterComplete = 0;
 
@@ -121,24 +105,26 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 	if (m_nIterComplete < m_nTotalIter)
 	{
 		ACCUM_PARAMS paramsAccum;
-		paramsAccum.nSteps = max(1, m_nCycleIter / (m_IterArray.nHeight * m_IterArray.nWidth)); // m_nTotalIter / (m_IterArray.nHeight * m_IterArray.nWidth);
+		paramsAccum.nSteps = max(1, m_nCycleIter / (m_IterArray.Length())); // m_nTotalIter / (m_IterArray.nHeight * m_IterArray.nWidth);
 		paramsAccum.rect = m_rectScale;
 		paramsAccum.bHitPercent = (m_nIterComplete == 0);
+		paramsAccum.nThreads = m_nIterThreads;
+		paramsAccum.nBlocks = m_nIterBlocks;
 		err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
-		m_nIterComplete += paramsAccum.nSteps * m_IterArray.nHeight * m_IterArray.nWidth;
+		m_nIterComplete += paramsAccum.nSteps * m_IterArray.Length();
 
 		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
 		float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
 		
 		if (bRender)
 		{
-			GPU_ARRAY_2D texture;
+			CCudaTexture2D texture;
 			err = m_pTexture->MapToCudaArray(texture);
 			if (err != cudaSuccess) return E_FAIL;
 
 			RENDER_PARAMS paramsRender;
 			ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
-			paramsRender.fLogColorScale = 1.0f / log((float)(pAccumStats->nMaxColorElement + 1.0f));
+			paramsRender.fLogColorScale = 1.0f / log(pAccumStats->fMaxColorElement + 1.0f);
 			paramsRender.iAntiAlias = m_config.AntiAlias();
 			paramsRender.iKernelRadius = m_config.KernelRadius();
 			paramsRender.fFilterScale = m_config.KernelRadius() ?

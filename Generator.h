@@ -3,6 +3,7 @@
 #include "ConfigData.h"
 #include "DX11CudaTexture.h"
 #include "AccumData.h"
+#include "CudaArray.h"
 
 class CGenerator
 {
@@ -19,13 +20,13 @@ public:
 protected:
 	CONFIG_DATA m_config;
 	std::unique_ptr<CDX11CudaTexture> m_pTexture;
-	GPU_ARRAY_2D m_AccumArray;
-	GPU_ARRAY_2D m_FilteredArray;
-	GPU_ARRAY_2D m_IterArray;
+	CCudaArray2D<ACCUM> m_AccumArray;
+	CCudaArray2D<FILTERED> m_FilteredArray;
+	CCudaArray1D<ITERATOR> m_IterArray;
 	PVOID m_pAccumStats;
 	RECT_SCALE m_rectScale;
-	const UINT m_nAccumThreads = 128;
-	const UINT m_nAccumBlocks = 128;
+	const UINT m_nIterThreads = 128;
+	const UINT m_nIterBlocks = 128;
 	UINT m_nTotalIter;
 	UINT m_nCycleIter;
 	UINT m_nIterComplete;
