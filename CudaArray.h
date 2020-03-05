@@ -33,6 +33,14 @@ public:
 
 	__host__ void Free() { CudaFree(m_pArray); m_nLength = 0; }
 
+	__host__ cudaError_t CopyTo(PVOID dest, cudaMemcpyKind kind) {
+		return cudaMemcpy(dest, m_pArray, Length() * ElementSize(), kind);
+	}
+
+	__host__ cudaError_t CopyFrom(PVOID src, cudaMemcpyKind kind) {
+		return cudaMemcpy(m_pArray, src, Length() * ElementSize(), kind);
+	}
+
 	__device__ T* GetAt(UINT idx) {
 		return (T*)((unsigned char*)m_pArray + idx * sizeof(T));
 	}
@@ -124,9 +132,9 @@ public:
 	__host__ void Free() { CCudaArray2D<float>::Free(); }
 	__host__ bool IsEmpty() { return !m_pArray; }
 
-	__host__ cudaError_t CopyToCudaArray(cudaArray_t dest) {
+	__host__ cudaError_t CopyTo(cudaArray_t dest, cudaMemcpyKind kind) {
 		return cudaMemcpy2DToArray(dest, 0, 0, m_pArray, Pitch(),
-			(size_t)Width() * 4 * sizeof(float), Height(), cudaMemcpyDeviceToDevice);
+			(size_t)Width() * 4 * sizeof(float), Height(), kind);
 	}
 
 	__device__ float* GetAt(UINT idx, UINT idy) { return CCudaArray2D<float>::GetAt(idx * 4, idy); }

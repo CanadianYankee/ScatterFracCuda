@@ -104,6 +104,8 @@
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScatterFracCuda.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="Transform.h" />
+    <ClInclude Include="VectorMatrix.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DX11CudaTexture.cpp" />

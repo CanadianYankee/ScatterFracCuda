@@ -19,6 +19,7 @@ CGenerator::~CGenerator()
 	m_AccumArray.Free();
 	m_FilteredArray.Free();
 	m_IterArray.Free();
+	m_TransformArray.Free();
 	CudaFree(m_pAccumStats);
 	m_pTexture.reset();
 
@@ -59,6 +60,9 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	err = m_IterArray.Malloc(m_nIterBlocks * m_nIterThreads);
 	if (err != cudaSuccess) return E_FAIL;
 
+	// Create the set of transforms and copy to the GPU
+	hr = RandomizeTransforms();
+
 	// Initialize all of the generators and do a short run to find window scale
 	err = cudaDeviceSynchronize();
 	if (err != cudaSuccess) return E_FAIL;
@@ -95,6 +99,15 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	m_nIterComplete = 0;
 
 	return hr;
+}
+
+HRESULT CGenerator::RandomizeTransforms()
+{
+	HRESULT hr = S_OK;
+
+	UINT nTransforms = 3;
+
+	return S_OK;
 }
 
 HRESULT CGenerator::Iterate(BOOL bRender)

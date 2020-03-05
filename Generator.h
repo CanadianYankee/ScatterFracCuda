@@ -4,6 +4,7 @@
 #include "DX11CudaTexture.h"
 #include "AccumData.h"
 #include "CudaArray.h"
+#include "Transform.h"
 
 class CGenerator
 {
@@ -12,6 +13,7 @@ public:
 	~CGenerator();
 
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL &bFailed);
+	HRESULT RandomizeTransforms();
 	HRESULT Iterate(BOOL bRender = TRUE);
 	bool IsIncomplete() { return m_nIterComplete < m_nTotalIter; }
 	float DrawAspectRatio() { return m_pTexture->AspectRatio(); }
@@ -23,6 +25,7 @@ protected:
 	CCudaArray2D<ACCUM> m_AccumArray;
 	CCudaArray2D<FILTERED> m_FilteredArray;
 	CCudaArray1D<ITERATOR> m_IterArray;
+	CCudaArray1D<CTransform> m_TransformArray;
 	PVOID m_pAccumStats;
 	RECT_SCALE m_rectScale;
 	const UINT m_nIterThreads = 128;
