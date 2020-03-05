@@ -14,9 +14,9 @@ struct CONFIG_DATA
 	float fGammaSatur;
 
 	CONFIG_DATA() :
-		nDrawWidth(3840)
-		, nDrawHeight(2160)
-		, bAntiAlias(FALSE)
+		nDrawWidth(640)
+		, nDrawHeight(400)
+		, bAntiAlias(TRUE)
 		, iAntiAliasLevel(3)
 		, bKernelBlur(TRUE)
 		, iKernelRadius(9)

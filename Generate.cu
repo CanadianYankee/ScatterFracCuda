@@ -1,5 +1,6 @@
 #include "framework.h"
 #include "AccumData.h"
+#include "CudaArray.h"
 
 __device__ void transform(ITERATOR* iter);
 
@@ -19,10 +20,10 @@ __device__ __forceinline__ float atomicMaxFloat(float* addr, float value) {
 	return old;
 }
 
-__global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D arrAccum, PVOID pStats)
+__global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCudaArray2D<ACCUM> arrAccum, PVOID pStats)
 {
 	UINT idx = blockIdx.x * blockDim.x + threadIdx.x;
-	ITERATOR* iter = &(((ITERATOR*)(arrIter.pArray))[idx]);
+	ITERATOR* iter = arrIter.GetAt(idx);
 	ACCUM_STATS* accumStats = (ACCUM_STATS*)pStats;
 
 	if (accumStats->bAbort) return;
@@ -47,10 +48,11 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 		{
 			int i = int(iter->x * params.rect.fScale + params.rect.fOffsetX);
 			int j = int(iter->y * params.rect.fScale + params.rect.fOffsetY);
-			if (i >= 0 && i < (int)arrAccum.nWidth && j >= 0 && j < (int)arrAccum.nHeight)
+			if (arrAccum.ValidIndex(i, j))
 			{
-				ACCUM* element = (ACCUM*)((unsigned char *)(arrAccum.pArray) + j * arrAccum.nPitch + i * sizeof(ACCUM));
+				ACCUM* element = arrAccum.GetAt(i, j);
 				UINT nCount = atomicAdd(&(element->nCount), 1);
+				atomicMax(&(accumStats->nMaxCount), nCount);
 				if (params.bHitPercent)
 				{
 					atomicAdd(&(accumStats->nHitRect), 1);
@@ -60,7 +62,7 @@ __global__ void iterate(ACCUM_PARAMS params, GPU_ARRAY_2D arrIter, GPU_ARRAY_2D 
 				atomicAdd(&(element->clrAccum.r), iter->clr.r);
 				atomicAdd(&(element->clrAccum.g), iter->clr.g);
 				atomicAdd(&(element->clrAccum.b), iter->clr.b);
-				atomicMax(&(accumStats->nMaxColorElement), (UINT)ceil(element->clrAccum.Max()));
+				atomicMaxFloat(&(accumStats->fMaxColorElement), element->clrAccum.Max());
 			}
 		}
 	}
@@ -106,70 +108,16 @@ __device__ void transform(ITERATOR* iter)
 	iter->clr.Tint(clr, 3.0f);
 }
 
-__global__ void rescale_accum(const RENDER_PARAMS params, GPU_ARRAY_2D arrAccum)
+cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats)
 {
-	UINT arrx = blockIdx.x * blockDim.x + threadIdx.x;
-	UINT arry = blockIdx.y * blockDim.y + threadIdx.y;
-	if (arrx >= arrAccum.nWidth || arry >= arrAccum.nHeight) return;
-
-	ACCUM* pRow = (ACCUM*)((unsigned char*)arrAccum.pArray + arry * arrAccum.nPitch);
-	ACCUM* pItem = &pRow[arrx];
-	if (!pItem->clrAccum.IsZero())
-	{
-		FLOAT_COLOR clr = pItem->clrAccum;
-		clr.LogScale(params.fLogColorScale);
-		float h, s, v;
-		clr.ToHSV(h, s, v);
-		v = powf(v, params.fValuePower);
-		if (params.fSaturPower) s = powf(s, params.fSaturPower);
-		clr.FromHSV(h, s, v);
-		pItem->clrFinal = clr;
-	}
-}
-
-__global__ void render_texture(const RENDER_PARAMS params, GPU_ARRAY_2D texture, GPU_ARRAY_2D arrAccum)
-{
-	UINT texx = blockIdx.x * blockDim.x + threadIdx.x;
-	UINT texy = blockIdx.y * blockDim.y + threadIdx.y;
-	if (texx >= texture.nWidth || texy >= texture.nHeight) return;
-
-	float *pixel = (float*)((unsigned char *)(texture.pArray) + texy * texture.nPitch) + 4 * texx;
-
-	UINT iAntiAlias = max(1, params.iAntiAlias);
-	UINT iKernelRadius = max(0, params.iKernelRadius);
-	UINT arrx = iKernelRadius + texx * iAntiAlias;
-	UINT arry = iKernelRadius + texy * iAntiAlias;
-
-	float r = 0.0f, g = 0.0f, b = 0.0f;
-	for (UINT j = 0; j < iAntiAlias; j++)
-	{
-		ACCUM* pRow = (ACCUM*)((unsigned char *)arrAccum.pArray + (arry + j) * arrAccum.nPitch);
-		for (UINT i = 0; i < iAntiAlias; i++)
-		{
-			ACCUM* pItem = &pRow[arrx + i];
-			if (!pItem->clrFinal.IsZero())
-			{
-				r += pItem->clrFinal.r;
-				g += pItem->clrFinal.g;
-				b += pItem->clrFinal.b;
-			}
-		}
-	}
-	pixel[0] = r / (float)(iAntiAlias * iAntiAlias);
-	pixel[1] = g / (float)(iAntiAlias * iAntiAlias);
-	pixel[2] = b / (float)(iAntiAlias * iAntiAlias);
-	pixel[3] = 1.0f;
-}
-
-cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_ARRAY_2D& arrAccum, PVOID pStats)
-{
+	assert(params.nBlocks * params.nThreads == arrIter.Length());
 	cudaError_t error = cudaSuccess;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
 	cudaEventRecord(start);
-	iterate << < arrIter.nWidth, arrIter.nHeight >> > (params, arrIter, arrAccum, pStats);
+	iterate << < params.nBlocks, params.nThreads >> > (params, arrIter, arrAccum, pStats);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
@@ -182,37 +130,3 @@ cudaError_t cuda_iterate(const ACCUM_PARAMS& params, GPU_ARRAY_2D& arrIter, GPU_
 	return error;
 }
 
-cudaError_t cuda_render_texture(const RENDER_PARAMS& params, GPU_ARRAY_2D& texture, GPU_ARRAY_2D& arrAccum)
-{
-	cudaError_t error = cudaSuccess;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
-
-	dim3 Db = dim3(16, 16);   
-	dim3 Dg = dim3(((UINT)arrAccum.nWidth + Db.x - 1) / Db.x, ((UINT)arrAccum.nHeight + Db.y - 1) / Db.y);
-	cudaEventRecord(start);
-	rescale_accum << <Dg, Db >> > (params, arrAccum);
-	cudaEventRecord(stop);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) return error;
-	cudaEventSynchronize(stop);
-	error = cudaGetLastError();
-	float milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
-
-	Dg = dim3(((UINT)texture.nWidth + Db.x - 1) / Db.x, ((UINT)texture.nHeight + Db.y - 1) / Db.y);
-
-	cudaEventRecord(start);
-	render_texture <<<Dg, Db>>> (params, texture, arrAccum);
-	cudaEventRecord(stop);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) return error;
-
-	cudaEventSynchronize(stop);
-	error = cudaGetLastError();
-	milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
-
-	return error;
-}

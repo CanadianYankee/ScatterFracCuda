@@ -3,13 +3,11 @@
 #include "randgen.h"
 #include "FloatColor.h"
 
-inline void CudaFree(PVOID& ptr) { if (ptr) { cudaFree(ptr); ptr = nullptr; } }
-
 // Struct to encapsulate a memory-aligned 2D array on the GPU device
-struct GPU_ARRAY_2D
+struct GPU_ARRAY_2D_OLD
 {
-	GPU_ARRAY_2D() : pArray(nullptr), nWidth(0), nHeight(0), nPitch(0) {}
-	GPU_ARRAY_2D(PVOID ptr, UINT w, UINT h, UINT p = 0) : pArray(ptr), nWidth(w), nHeight(h), nPitch(p) {}
+	GPU_ARRAY_2D_OLD() : pArray(nullptr), nWidth(0), nHeight(0), nPitch(0) {}
+	GPU_ARRAY_2D_OLD(PVOID ptr, UINT w, UINT h, UINT p = 0) : pArray(ptr), nWidth(w), nHeight(h), nPitch(p) {}
 	PVOID pArray;
 	UINT nWidth;
 	UINT nHeight;
@@ -21,8 +19,10 @@ struct ACCUM
 {
 	UINT nCount;
 	FLOAT_COLOR clrAccum;
-	FLOAT_COLOR clrFinal;
 };
+
+// Each element in the 2D filtered array is just a color
+typedef FLOAT_COLOR FILTERED;
 
 // Each thread gets an iterator, which has a random number generator, a position, and a color
 struct ITERATOR
@@ -46,14 +46,17 @@ struct ACCUM_PARAMS
 	BOOL bInit;			// When true, do initializtion and not accumlation
 	BOOL bHitPercent;	// When true (on first cycle), do hit count percentage tracking
 	UINT nSteps;		// Number of iterations to do in this cycle (per thread)
+	UINT nThreads;		// Number of threads for the iterator bundle
+	UINT nBlocks;		// Number of blocks for the iterator bundle
 	RECT_SCALE rect;	// Scaling and offset to fit points in window
 };
 
 // Global statistics kept across all accum threads (in global GPU memory)
 struct ACCUM_STATS
 { 
-	ACCUM_STATS() : nMaxColorElement(0), xMin(0), yMin(0), yMax(0), nHitRect(0), nNewHits(0), bAbort(FALSE) {}
-	UINT nMaxColorElement;
+	ACCUM_STATS() : nMaxCount(0), fMaxColorElement(0), xMin(0), yMin(0), yMax(0), nHitRect(0), nNewHits(0), bAbort(FALSE) {}
+	UINT nMaxCount;
+	float fMaxColorElement;
 	float xMin, yMin, xMax, yMax; 
 	UINT nHitRect;
 	UINT nNewHits;
@@ -64,8 +67,10 @@ struct ACCUM_STATS
 struct RENDER_PARAMS
 {
 	float fLogColorScale;	// Scale factor for count (based on MaxColorElement)
+	float fFilterScale;		// Density filter scale (derived from MaxCount)
 	UINT iAntiAlias;		// AntiAlias factor
-	UINT iKernelRadius;		// Kernel blur size
+	UINT iKernelRadius;		// Density estimation maximum kernel blur size
+	float fKernelAlpha;		// Kernel scaling alpha
 	float fValuePower;		// Value power
 	float fSaturPower;		// Saturation power
 };
