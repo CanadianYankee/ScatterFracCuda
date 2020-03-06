@@ -1,7 +1,8 @@
 #include "framework.h"
 #include "Generator.h"
+#include "Transform.h"
 
-extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats);
+extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<CTransform>& arrTransforms, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats);
 extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, CCudaTexture2D &texture, CCudaArray2D<FILTERED>& arrFiltered, CCudaArray2D<ACCUM> &arrAccum);
 
 CGenerator::CGenerator(const CONFIG_DATA &config) : 
@@ -61,7 +62,8 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Create the set of transforms and copy to the GPU
-	hr = RandomizeTransforms();
+	err = RandomizeTransforms();
+	if (err != cudaSuccess) return E_FAIL;
 
 	// Initialize all of the generators and do a short run to find window scale
 	err = cudaDeviceSynchronize();
@@ -75,7 +77,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	pAccumStats->xMin = pAccumStats->yMin = FLT_MAX;
 	pAccumStats->xMax = pAccumStats->yMax = -FLT_MAX;
 	CCudaArray2D<ACCUM> arrDummy; 
-	err = cuda_iterate(paramsAccum, m_IterArray, arrDummy, m_pAccumStats);
+	err = cuda_iterate(paramsAccum, m_TransformArray, m_IterArray, arrDummy, m_pAccumStats);
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Check for failure (blowing up to infinity)
@@ -101,13 +103,39 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	return hr;
 }
 
-HRESULT CGenerator::RandomizeTransforms()
+cudaError_t CGenerator::RandomizeTransforms()
 {
-	HRESULT hr = S_OK;
+	cudaError_t err = cudaSuccess;
 
 	UINT nTransforms = 3;
 
-	return S_OK;
+	std::vector<CTransform> vecTrans;
+	vecTrans.resize(3);
+
+	CMatrix2D matHalf = CMatrix2D(0.5f, 0.0f, 0.0f, 0.5f);
+
+	vecTrans[0].Weight() = 0.5f;
+	vecTrans[0].Color() = FLOAT_COLOR(1.0f, 1.0f, 0.0f);
+	vecTrans[0].Matrix0() = matHalf;
+	vecTrans[0].Offset0() = CVector2D(0.0f, 0.5f);
+
+	vecTrans[1].Weight() = 0.9f;
+	vecTrans[1].Color() = FLOAT_COLOR(1.0f, 0.0f, 1.0f);
+	vecTrans[1].Matrix0() = matHalf;
+	vecTrans[1].Offset0() = CVector2D(0.433f, -0.25f);
+
+	vecTrans[2].Weight() = 1.0f;
+	vecTrans[2].Color() = FLOAT_COLOR(0.0f, 1.0f, 1.0f);
+	vecTrans[2].Matrix0() = matHalf;
+	vecTrans[2].Offset0() = CVector2D(-0.433f, -0.25f);
+
+	// Copy transform information to GPU
+	err = m_TransformArray.Malloc(nTransforms);
+	if (err != cudaSuccess) return err;
+	err = m_TransformArray.CopyFrom((PVOID)(vecTrans.data()), cudaMemcpyHostToDevice);
+	if (err != cudaSuccess) return err;
+
+	return err;
 }
 
 HRESULT CGenerator::Iterate(BOOL bRender)
@@ -123,7 +151,7 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 		paramsAccum.bHitPercent = (m_nIterComplete == 0);
 		paramsAccum.nThreads = m_nIterThreads;
 		paramsAccum.nBlocks = m_nIterBlocks;
-		err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
+		err = cuda_iterate(paramsAccum, m_TransformArray, m_IterArray, m_AccumArray, m_pAccumStats);
 		m_nIterComplete += paramsAccum.nSteps * m_IterArray.Length();
 
 		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;

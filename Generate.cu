@@ -1,8 +1,9 @@
 #include "framework.h"
 #include "AccumData.h"
+#include "Transform.h"
 #include "CudaArray.h"
 
-__device__ void transform(ITERATOR* iter);
+__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATOR* iter);
 
 __device__ __forceinline__ float atomicMinFloat(float* addr, float value) {
 	float old;
@@ -20,7 +21,7 @@ __device__ __forceinline__ float atomicMaxFloat(float* addr, float value) {
 	return old;
 }
 
-__global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCudaArray2D<ACCUM> arrAccum, PVOID pStats)
+__global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<CTransform> arrTransforms, CCudaArray1D<ITERATOR> arrIter, CCudaArray2D<ACCUM> arrAccum, PVOID pStats)
 {
 	UINT idx = blockIdx.x * blockDim.x + threadIdx.x;
 	ITERATOR* iter = arrIter.GetAt(idx);
@@ -36,7 +37,7 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCu
 
 	for (UINT i = 0; i < params.nSteps; i++)
 	{
-		transform(iter);
+		transform(arrTransforms, iter);
 
 		if (!isfinite(iter->pos[0]) || !isfinite(iter->pos[1]))
 		{
@@ -77,38 +78,23 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCu
 	}
 }
 
-__device__ void transform(ITERATOR* iter)
+__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATOR* iter)
 {
 	float rnd = iter->rand.frand();
-	FLOAT_COLOR clr;
-	if (rnd < 0.5f)
+	for (UINT i = 0; i < arrTransforms.Length(); i++)
 	{
-		iter->pos *= 0.5f;
-		iter->pos += CVector2D(0.0f, 0.5f);
-		clr.r = 1.0f;
-		clr.g = 1.0f;
-		clr.b = 0.0f;
+		const CTransform* pTrans = arrTransforms.GetAt(i);
+		if (rnd <= pTrans->Weight())
+		{
+			iter->pos = pTrans->Matrix0() * iter->pos;
+			iter->pos += pTrans->Offset0();
+			iter->clr.Tint(pTrans->Color(), 3.0f);
+			break;
+		}
 	}
-	else if (rnd < 0.9f)
-	{
-		iter->pos *= 0.5f;
-		iter->pos += CVector2D(0.433f, -0.25f);
-		clr.r = 1.0f;
-		clr.g = 0.0f;
-		clr.b = 1.0f;
-	}
-	else
-	{
-		iter->pos *= 0.5f;
-		iter->pos += CVector2D(-0.433f, -0.25f);
-		clr.r = 0.0f;
-		clr.g = 1.0f;
-		clr.b = 1.0f;
-	}
-	iter->clr.Tint(clr, 3.0f);
 }
 
-cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats)
+cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<CTransform>& arrTransforms, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats)
 {
 	assert(params.nBlocks * params.nThreads == arrIter.Length());
 	cudaError_t error = cudaSuccess;
@@ -117,7 +103,7 @@ cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arr
 	cudaEventCreate(&stop);
 
 	cudaEventRecord(start);
-	iterate << < params.nBlocks, params.nThreads >> > (params, arrIter, arrAccum, pStats);
+	iterate << < params.nBlocks, params.nThreads >> > (params, arrTransforms, arrIter, arrAccum, pStats);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;

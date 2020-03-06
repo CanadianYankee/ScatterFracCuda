@@ -13,7 +13,7 @@ public:
 	~CGenerator();
 
 	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL &bFailed);
-	HRESULT RandomizeTransforms();
+	cudaError_t RandomizeTransforms();
 	HRESULT Iterate(BOOL bRender = TRUE);
 	bool IsIncomplete() { return m_nIterComplete < m_nTotalIter; }
 	float DrawAspectRatio() { return m_pTexture->AspectRatio(); }

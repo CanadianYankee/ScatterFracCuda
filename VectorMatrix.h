@@ -7,6 +7,9 @@ public:
 	__host__ __device__ CVector2D(float x, float y) { v[0] = x; v[1] = y; }
 	__host__ __device__ CVector2D(float* vin) { v[0] = vin[0]; v[1] = vin[1]; }
 
+	__host__ __device__ static CVector2D* From(float* fptr) { return reinterpret_cast<CVector2D*>(fptr); }
+	__host__ __device__ static const CVector2D* From(const float* fptr) { return reinterpret_cast<const CVector2D*>(fptr); }
+
 	__host__ __device__ inline float operator [](UINT idx) const { return v[idx]; }
 	__host__ __device__ inline float &operator [](UINT idx) { return v[idx]; }
 
@@ -34,8 +37,11 @@ class CMatrix2D
 {
 public:
 	__host__ __device__ CMatrix2D() { m[0] = m[1] = m[2] = m[3] =  0.0f; }
-	__host__ __device__ CMatrix2D(float m00, float m01, float m10, float m11) { m[0] = m[00]; m[1] = m[01]; m[2] = m[10]; m[3] = m[11]; }
+	__host__ __device__ CMatrix2D(float m00, float m01, float m10, float m11) { m[0] = m00; m[1] = m01; m[2] = m10; m[3] = m11; }
 	__host__ __device__ CMatrix2D(float* min) { m[0] = min[0]; m[1] = min[1]; m[2] = min[2]; m[3] = min[3]; }
+
+	__host__ __device__ static CMatrix2D* From(float* fptr) { return reinterpret_cast<CMatrix2D*>(fptr); }
+	__host__ __device__ static const CMatrix2D* From(const float* fptr) { return reinterpret_cast<const CMatrix2D*>(fptr); }
 
 	__host__ __device__ inline float operator [](UINT idx) const { return m[idx]; }
 	__host__ __device__ inline float& operator [](UINT idx) { return m[idx]; }
