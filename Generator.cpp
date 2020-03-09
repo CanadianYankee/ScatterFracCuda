@@ -112,9 +112,10 @@ cudaError_t CGenerator::RandomizeTransforms()
 	UINT nTransforms = (UINT)random(MAXTRANSFORMS - 1) + 2;
 	UINT nSymmetry = m_config.bRotation ? (randomFlip() ? random(MAXSYMMETRY) + 1 : 1) : 1;
 	bool bMirror = (m_config.bMirror) ? randomFlip() : false;
+	UINT nAllTransforms = nTransforms + nSymmetry - 1 + (bMirror ? 1 : 0);
 
 	std::vector<CTransform> vecTrans;
-	vecTrans.resize(nTransforms + nSymmetry - 1 + (bMirror ? 1 : 0));
+	vecTrans.resize(nAllTransforms);
 
 	// Higher powers encourage more symmetry
 	float fPow = frand();
@@ -128,40 +129,38 @@ cudaError_t CGenerator::RandomizeTransforms()
 	for (UINT i = 0; i < nTransforms; i++)
 	{
 		float fScaleFactor = 1.0f / pow(i + 1.0f, fPow);
-
 		float fScale = frand() * fWeightPower;
 
-		float fElong = 1.0f;
-		if (bElongate)
-		{
-			fElong = 1.0f - frand() * fScale;
-			if (randomFlip())
-				fElong = 1.0f / fElong;
-		}
-		float fSx = fScale * fElong;
-		float fSy = fScale / fElong;
-
-		float fRot = (frand() - 0.5f) * 2.0f * 3.14169f;
-		CMatrix2D mat = CMatrix2D::Rotation(fRot) * CMatrix2D(fSx, 0, 0, fSy);
-
-		float fSkew = 0.0f;
-		if (bSkew)
-		{
-			fSkew = (frand() - 0.5f) * (1.0f - fScale);
-			mat *= CMatrix2D(1.0f, fSkew, fSkew, 1.0f) / sqrt(1.0f - fSkew * fSkew);
-		}
-
-		vecTrans[i].Matrix0() = mat;
-
-		CVector2D vec = CVector2D(1.0f, 0.0f);
-		vec = vec.Rotate(frand() * 2.0f * 3.14159f);
-		float fVecLen = frand();
-		vecTrans[i].Offset0() = fVecLen * vec;
+		RandomAffine(fScaleFactor, fScale, bElongate, bSkew, vecTrans[i].Matrix0(), vecTrans[i].Offset0());
 
 		vecTrans[i].Weight() = pow(fScale, fWeightPower);
 		vecTrans[i].Color() = FLOAT_COLOR(frand(), frand(), frand());
 
 		fTotalWeight += vecTrans[i].Weight();
+	}
+
+	if (nSymmetry > 1)
+	{
+		float fAngle = 6.2831853f / (float)nSymmetry;
+		for (UINT i = 1; i < nSymmetry; i++)
+		{
+			vecTrans[i + nTransforms - 1].Matrix0() = CMatrix2D::Rotation(fAngle * (float)i);
+			vecTrans[i + nTransforms - 1].Offset0() = CVector2D(0.0f, 0.0f);
+			vecTrans[i + nTransforms - 1].Weight() = fTotalWeight;
+			vecTrans[i + nTransforms - 1].Color() = FLOAT_COLOR(0.0f, 0.0f, 0.0f);
+		}
+		fTotalWeight *= nSymmetry;
+	}
+
+	if (bMirror)
+	{
+		float fAngle = 6.2831853f * (frand() - 0.5f);
+		vecTrans[nAllTransforms - 1].Matrix0() = CMatrix2D::Rotation(fAngle) * CMatrix2D(-1.0f, 0.0f, 0.0f, 1.0f) * CMatrix2D::Rotation(-fAngle);
+		vecTrans[nAllTransforms - 1].Offset0() = CVector2D(0.0f, 0.0f);
+		vecTrans[nAllTransforms - 1].Weight() = fTotalWeight;
+		vecTrans[nAllTransforms - 1].Color() = FLOAT_COLOR(0.0f, 0.0f, 0.0f);
+
+		fTotalWeight *= 2.0f;
 	}
 
 	float fCumWeight = 0.0f;
@@ -172,12 +171,40 @@ cudaError_t CGenerator::RandomizeTransforms()
 	}
 
 	// Copy transform information to GPU
-	err = m_TransformArray.Malloc(nTransforms);
+	err = m_TransformArray.Malloc(nAllTransforms);
 	if (err != cudaSuccess) return err;
 	err = m_TransformArray.CopyFrom((PVOID)(vecTrans.data()), cudaMemcpyHostToDevice);
 	if (err != cudaSuccess) return err;
 
 	return err;
+}
+
+void CGenerator::RandomAffine(float fScaleFactor, float fScale, bool bElongate, bool bSkew, CMatrix2D& matTrans, CVector2D& vecOffset)
+{
+	float fElong = 1.0f;
+	if (bElongate)
+	{
+		fElong = 1.0f - frand() * fScale;
+		if (randomFlip())
+			fElong = 1.0f / fElong;
+	}
+	float fSx = fScale * fElong;
+	float fSy = fScale / fElong;
+
+	float fRot = (frand() - 0.5f) * 2.0f * 3.14169f;
+	matTrans = CMatrix2D::Rotation(fRot) * CMatrix2D(fSx, 0, 0, fSy);
+
+	float fSkew = 0.0f;
+	if (bSkew)
+	{
+		fSkew = (frand() - 0.5f) * (1.0f - fScale);
+		matTrans *= CMatrix2D(1.0f, fSkew, fSkew, 1.0f) / sqrt(1.0f - fSkew * fSkew);
+	}
+
+	vecOffset = CVector2D(1.0f, 0.0f);
+	vecOffset = vecOffset.Rotate(frand() * 6.2831853f);
+	float fVecLen = frand();
+	vecOffset *= fVecLen;
 }
 
 HRESULT CGenerator::Iterate(BOOL bRender)
@@ -197,7 +224,13 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 		m_nIterComplete += paramsAccum.nSteps * m_IterArray.Length();
 
 		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
-		float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
+		if (paramsAccum.bHitPercent)
+		{
+			float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
+			TCHAR out[128];
+			_stprintf_s(out, 128, _T("Hit fraction = %f\n"), fPercent);
+			OutputDebugString(out);
+		}
 		
 		if (bRender)
 		{

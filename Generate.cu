@@ -88,7 +88,7 @@ __device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATO
 		{
 			iter->pos = pTrans->Matrix0() * iter->pos;
 			iter->pos += pTrans->Offset0();
-			iter->clr.Tint(pTrans->Color(), 3.0f);
+			if(!pTrans->Color().IsZero()) iter->clr.Tint(pTrans->Color(), 3.0f);
 			break;
 		}
 	}

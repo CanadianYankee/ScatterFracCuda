@@ -21,6 +21,8 @@ public:
 	void LoadDrawPS(ComPtr<ID3D11DeviceContext> pD3DContext) { m_pTexture->LoadPS(pD3DContext); } 
 
 protected:
+	void RandomAffine(float fScaleFactor, float fScale, bool bElongate, bool bSkew, CMatrix2D& matTrans, CVector2D& vecOffset);
+
 	CONFIG_DATA m_config;
 	const UINT MAXSYMMETRY = 12;
 	const UINT MAXTRANSFORMS = 10;

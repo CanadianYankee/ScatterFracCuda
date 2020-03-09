@@ -17,7 +17,7 @@ __device__ inline void AddFiltered(CCudaArray2D<FILTERED>& arrFiltered, int x, i
 __device__ inline float gaussian(float x, float stddev)
 {
 	float x0 = x / stddev;
-	return exp(-0.5f * x0 * x0) / (sqrt(2.0f * 3.14159f) * stddev);
+	return exp(-0.5f * x0 * x0) / (sqrt(6.2831853f) * stddev);
 }
 
 __global__ void rescale_filter(const RENDER_PARAMS params, CCudaArray2D<FILTERED> arrFiltered, CCudaArray2D<ACCUM> arrAccum)
