@@ -107,27 +107,67 @@ cudaError_t CGenerator::RandomizeTransforms()
 {
 	cudaError_t err = cudaSuccess;
 
-	UINT nTransforms = 3;
+	UINT nTransforms = (UINT)random(MAXTRANSFORMS - 1) + 2;
+	UINT nSymmetry = m_config.bRotation ? (randomFlip() ? random(MAXSYMMETRY) + 1 : 1) : 1;
+	bool bMirror = (m_config.bMirror) ? randomFlip() : false;
 
 	std::vector<CTransform> vecTrans;
-	vecTrans.resize(3);
+	vecTrans.resize(nTransforms + nSymmetry - 1 + (bMirror ? 1 : 0));
 
-	CMatrix2D matHalf = CMatrix2D(0.5f, 0.0f, 0.0f, 0.5f);
+	// Higher powers encourage more symmetry
+	float fPow = frand();
 
-	vecTrans[0].Weight() = 0.5f;
-	vecTrans[0].Color() = FLOAT_COLOR(1.0f, 1.0f, 0.0f);
-	vecTrans[0].Matrix0() = matHalf;
-	vecTrans[0].Offset0() = CVector2D(0.0f, 0.5f);
+	float fWeightPower = frand() * 2.0f;	// Higher weight powers give more even coverage
+	bool bElongate = randomFlip();
+	bool bSkew = randomFlip();
 
-	vecTrans[1].Weight() = 0.9f;
-	vecTrans[1].Color() = FLOAT_COLOR(1.0f, 0.0f, 1.0f);
-	vecTrans[1].Matrix0() = matHalf;
-	vecTrans[1].Offset0() = CVector2D(0.433f, -0.25f);
+	float fTotalWeight = 0.0f;
 
-	vecTrans[2].Weight() = 1.0f;
-	vecTrans[2].Color() = FLOAT_COLOR(0.0f, 1.0f, 1.0f);
-	vecTrans[2].Matrix0() = matHalf;
-	vecTrans[2].Offset0() = CVector2D(-0.433f, -0.25f);
+	for (UINT i = 0; i < nTransforms; i++)
+	{
+		float fScaleFactor = 1.0f / pow(i + 1.0f, fPow);
+
+		float fScale = frand() * fWeightPower;
+
+		float fElong = 1.0f;
+		if (bElongate)
+		{
+			fElong = 1.0f - frand() * fScale;
+			if (randomFlip())
+				fElong = 1.0f / fElong;
+		}
+		float fSx = fScale * fElong;
+		float fSy = fScale / fElong;
+
+		float fRot = (frand() - 0.5f) * 2.0f * 3.14169f;
+		CMatrix2D mat = CMatrix2D::Rotation(fRot) * CMatrix2D(fSx, 0, 0, fSy);
+
+		float fSkew = 0.0f;
+		if (bSkew)
+		{
+			fSkew = (frand() - 0.5f) * (1.0f - fScale);
+			mat *= CMatrix2D(1.0f, fSkew, fSkew, 1.0f) / sqrt(1.0f - fSkew * fSkew);
+		}
+
+		vecTrans[i].Matrix0() = mat;
+
+		CVector2D vec = CVector2D(1.0f, 0.0f);
+		vec = vec.Rotate(frand() * 2.0f * 3.14159f);
+		float fVecLen = frand();
+		vecTrans[i].Offset0() = fVecLen * vec;
+
+		vecTrans[i].Weight() = pow(fScale, fWeightPower);
+		vecTrans[i].Color() = FLOAT_COLOR(frand(), frand(), frand());
+
+		fTotalWeight += vecTrans[i].Weight();
+	}
+
+	float fCumWeight = 0.0f;
+	for (size_t i = 0; i < vecTrans.size(); i++)
+	{
+		fCumWeight += vecTrans[i].Weight();
+		vecTrans[i].Weight() = fCumWeight / fTotalWeight;
+	}
 
 	// Copy transform information to GPU
 	err = m_TransformArray.Malloc(nTransforms);

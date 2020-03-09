@@ -5,8 +5,9 @@
 #include "AccumData.h"
 #include "CudaArray.h"
 #include "Transform.h"
+#include "Randomizer.h"
 
-class CGenerator
+class CGenerator : private CRandomizer
 {
 public:
 	CGenerator(const CONFIG_DATA &config);
@@ -21,6 +22,8 @@ public:
 
 protected:
 	CONFIG_DATA m_config;
+	const UINT MAXSYMMETRY = 12;
+	const UINT MAXTRANSFORMS = 10;
 	std::unique_ptr<CDX11CudaTexture> m_pTexture;
 	CCudaArray2D<ACCUM> m_AccumArray;
 	CCudaArray2D<FILTERED> m_FilteredArray;

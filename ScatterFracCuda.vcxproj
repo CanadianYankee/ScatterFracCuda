@@ -101,6 +101,7 @@
     <ClInclude Include="FloatColor.h" />
     <ClInclude Include="CudaArray.h" />
     <ClInclude Include="randgen.h" />
+    <ClInclude Include="Randomizer.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScatterFracCuda.h" />
     <ClInclude Include="targetver.h" />

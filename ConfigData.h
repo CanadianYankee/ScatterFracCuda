@@ -4,6 +4,8 @@ struct CONFIG_DATA
 {
 	UINT nDrawWidth;
 	UINT nDrawHeight;
+	BOOL bRotation;
+	BOOL bMirror;
 	BOOL bAntiAlias;
 	UINT iAntiAliasLevel;
 	BOOL bKernelBlur;
@@ -14,8 +16,10 @@ struct CONFIG_DATA
 	float fGammaSatur;
 
 	CONFIG_DATA() :
-		nDrawWidth(640)
-		, nDrawHeight(400)
+		nDrawWidth(3840)
+		, nDrawHeight(2160)
+		, bRotation(FALSE)
+		, bMirror(FALSE)
 		, bAntiAlias(TRUE)
 		, iAntiAliasLevel(3)
 		, bKernelBlur(TRUE)
