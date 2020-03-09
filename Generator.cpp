@@ -48,7 +48,9 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Create the array for the filtered and log-scaled results
-	err = m_FilteredArray.MallocPitch(m_config.nDrawWidth * m_config.AntiAlias(), m_config.nDrawHeight * m_config.AntiAlias());
+	UINT nFilteredWidth = m_config.nDrawWidth * m_config.AntiAlias();
+	UINT nFilteredHeight = m_config.nDrawHeight * m_config.AntiAlias();
+	err = m_FilteredArray.MallocPitch(nFilteredWidth, nFilteredHeight);
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Stats gathered during generation (managed memory for easy CPU access
@@ -91,12 +93,12 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 		float dy = (pAccumStats->yMax - pAccumStats->yMin) * 1.1f;
 		float cx = 0.5f * (pAccumStats->xMax + pAccumStats->xMin);
 		float cy = 0.5f * (pAccumStats->yMax + pAccumStats->yMin);
-		m_rectScale.fScale = min((float)m_FilteredArray.Width() / dx, (float)m_FilteredArray.Height() / dy);
-		m_rectScale.fOffsetX = 0.5f * (float)m_FilteredArray.Width() - m_rectScale.fScale * cx;
-		m_rectScale.fOffsetY = 0.5f * (float)m_FilteredArray.Height() - m_rectScale.fScale * cy;
+		m_rectScale.fScale = min((float)nFilteredWidth / dx, (float)nFilteredHeight / dy);
+		m_rectScale.fOffsetX = 0.5f * (float)nFilteredWidth - m_rectScale.fScale * cx;
+		m_rectScale.fOffsetY = 0.5f * (float)nFilteredHeight - m_rectScale.fScale * cy;
 	}
 
-	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * m_FilteredArray.Height() * m_FilteredArray.Width() / 25;
+	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * nFilteredHeight * nFilteredWidth / 25;
 	m_nCycleIter = m_nTotalIter / (16 * m_config.iIterationLevel);
 	m_nIterComplete = 0;
 

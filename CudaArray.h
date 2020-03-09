@@ -28,7 +28,7 @@ public:
 	}
 
 	__host__ inline cudaError_t Zero() {
-		return m_pArray ? cudaMemset(m_pArray, 0, m_nLength * sizeof(T)) : cudaSuccess;
+		return m_pArray ? cudaMemset(m_pArray, 0, m_nLength * ElementSize()) : cudaSuccess;
 	}
 
 	__host__ void Free() { CudaFree(m_pArray); m_nLength = 0; }
@@ -90,7 +90,7 @@ public:
 	}
 
 	__host__ inline cudaError_t Zero() 	{
-		return m_pArray ? cudaMemset2D(m_pArray, m_nPitch, 0, m_nWidth, m_nHeight) : cudaSuccess;
+		return m_pArray ? cudaMemset2D(m_pArray, m_nPitch, 0, m_nWidth * ElementSize(), m_nHeight) : cudaSuccess;
 	}
 
 	__host__ void Free() { CudaFree(m_pArray); m_nWidth = m_nHeight = m_nPitch = 0; }

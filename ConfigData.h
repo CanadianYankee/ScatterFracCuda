@@ -16,16 +16,16 @@ struct CONFIG_DATA
 	float fGammaSatur;
 
 	CONFIG_DATA() :
-		nDrawWidth(3840)
-		, nDrawHeight(2160)
+		nDrawWidth(640)
+		, nDrawHeight(400)
 		, bRotation(FALSE)
 		, bMirror(FALSE)
-		, bAntiAlias(TRUE)
+		, bAntiAlias(FALSE)
 		, iAntiAliasLevel(3)
 		, bKernelBlur(TRUE)
 		, iKernelRadius(9)
 		, fKernelAlpha(0.4f)
-		, iIterationLevel(8)
+		, iIterationLevel(20)
 		, fGammaValue(3.0f)
 		, fGammaSatur(1.5f)
 	{}
