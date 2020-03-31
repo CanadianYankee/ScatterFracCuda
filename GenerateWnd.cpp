@@ -151,18 +151,6 @@ HRESULT CGenerateWnd::InitD3DResources()
 {
 	HRESULT hr = S_OK;
 
-    // Initialize the generator
-    CONFIG_DATA config;
-    if (!config.nDrawWidth || !config.nDrawHeight)
-    {
-        config.nDrawWidth = m_iClientWidth;
-        config.nDrawHeight = m_iClientHeight;
-    }
-	BOOL bRetry = FALSE;
-    m_pGenerator = std::make_unique<CGenerator>(config);
-	hr = m_pGenerator->Initialize(m_pD3DDevice, bRetry);
-	if (FAILED(hr)) return hr;
-
 	// Load the Vertex and Pixel shaders
 	ComPtr<ID3D11DeviceChild> pShader;
 	hr = DXUtils::LoadShader(m_pD3DDevice, DXUtils::ShaderType::VertexShader, L"TextureVS.cso", nullptr, &pShader);
@@ -287,21 +275,24 @@ HRESULT CGenerateWnd::RenderScene()
         return FALSE;
     }
 
-    const float background[4] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    const float background[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
     m_pD3DContext->ClearRenderTargetView(m_pRenderTargetView.Get(), background);
 
-    m_pD3DContext->IASetInputLayout(0);
-    m_pD3DContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    if (m_pGenerator.get())
+    {
+        m_pD3DContext->IASetInputLayout(0);
+        m_pD3DContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
-    m_pD3DContext->VSSetShader(m_pVertexShader.Get(), NULL, 0);
-    m_pD3DContext->VSSetConstantBuffers(0, 1, m_pCBVSVariables.GetAddressOf());
+        m_pD3DContext->VSSetShader(m_pVertexShader.Get(), NULL, 0);
+        m_pD3DContext->VSSetConstantBuffers(0, 1, m_pCBVSVariables.GetAddressOf());
 
-	m_pD3DContext->PSSetShader(m_pPixelShader.Get(), NULL, 0);
+        m_pD3DContext->PSSetShader(m_pPixelShader.Get(), NULL, 0);
 
-	m_pGenerator->LoadDrawPS(m_pD3DContext);
+        m_pGenerator->LoadDrawPS(m_pD3DContext);
 
-    m_pD3DContext->Draw(4, 0);
+        m_pD3DContext->Draw(4, 0);
+    }
 
     hr = m_pSwapChain->Present(1, 0);
 
@@ -328,11 +319,28 @@ int CGenerateWnd::Run(HINSTANCE hInstance)
 		// Otherwise, let the generator do any necessary  its thing
 		else
 		{
-			if (m_pGenerator->IsIncomplete())
+            if (!m_pGenerator.get() || m_pGenerator->RestartNeeded())
+            {
+                // Initialize the generator
+                CONFIG_DATA config;
+                if (!config.nDrawWidth || !config.nDrawHeight)
+                {
+                    config.nDrawWidth = m_iClientWidth;
+                    config.nDrawHeight = m_iClientHeight;
+                }
+                m_pGenerator = std::make_unique<CGenerator>(config);
+                HRESULT hr = m_pGenerator->Initialize(m_pD3DDevice);
+//                if (FAILED(hr)) return hr;
+            }
+            else if (m_pGenerator->IsIncomplete())
 			{
 				m_pGenerator->Iterate();
 				RenderScene();
 			}
+            else
+            {
+                m_pGenerator.reset();
+            }
 		}
 		Sleep(0);
 	} while (msg.message != WM_QUIT);
@@ -360,6 +368,9 @@ LRESULT CGenerateWnd::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPa
         // Parse the menu selections:
         switch (wmId)
         {
+        case IDM_FILE_NEW:
+            m_pGenerator.reset();
+            break;
         case IDM_EXIT:
             DestroyWindow(hWnd);
             break;

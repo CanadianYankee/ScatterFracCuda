@@ -11,6 +11,7 @@ CGenerator::CGenerator(const CONFIG_DATA &config) :
 	, m_nTotalIter(0)
 	, m_nCycleIter(0)
 	, m_nIterComplete(0)
+	, m_bRestartNeeded(false)
 {
 
 }
@@ -27,7 +28,7 @@ CGenerator::~CGenerator()
 	cudaDeviceReset();
 }
 
-HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
+HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 {
 	HRESULT hr = S_OK;
 	cudaError_t err = cudaSuccess;
@@ -85,7 +86,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	// Check for failure (blowing up to infinity)
 	pAccumStats = (ACCUM_STATS*)m_pAccumStats;
 	if (pAccumStats->bAbort)
-		bFailed = TRUE;
+		m_bRestartNeeded = true;
 	else
 	{
 		// Set window scale
@@ -230,6 +231,8 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 			TCHAR out[128];
 			_stprintf_s(out, 128, _T("Hit fraction = %f\n"), fPercent);
 			OutputDebugString(out);
+			if (fPercent < m_config.iHitPercent * 0.01f)
+				m_bRestartNeeded = true;
 		}
 		
 		if (bRender)

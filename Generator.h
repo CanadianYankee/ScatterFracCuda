@@ -13,10 +13,11 @@ public:
 	CGenerator(const CONFIG_DATA &config);
 	~CGenerator();
 
-	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL &bFailed);
+	HRESULT Initialize(ComPtr<ID3D11Device> pD3DDevice);
 	cudaError_t RandomizeTransforms();
 	HRESULT Iterate(BOOL bRender = TRUE);
 	bool IsIncomplete() { return m_nIterComplete < m_nTotalIter; }
+	bool RestartNeeded() { return m_bRestartNeeded;  }
 	float DrawAspectRatio() { return m_pTexture->AspectRatio(); }
 	void LoadDrawPS(ComPtr<ID3D11DeviceContext> pD3DContext) { m_pTexture->LoadPS(pD3DContext); } 
 
@@ -32,6 +33,7 @@ protected:
 	CCudaArray1D<ITERATOR> m_IterArray;
 	CCudaArray1D<CTransform> m_TransformArray;
 	PVOID m_pAccumStats;
+	bool m_bRestartNeeded;
 	RECT_SCALE m_rectScale;
 	const UINT m_nIterThreads = 128;
 	const UINT m_nIterBlocks = 128;

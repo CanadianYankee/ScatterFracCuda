@@ -12,20 +12,22 @@ struct CONFIG_DATA
 	UINT iKernelRadius;
 	float fKernelAlpha;
 	UINT iIterationLevel;
+	UINT iHitPercent;
 	float fGammaValue;
 	float fGammaSatur;
 
 	CONFIG_DATA() :
-		nDrawWidth(1920)
-		, nDrawHeight(1080)
+		nDrawWidth(3841)
+		, nDrawHeight(2160)
 		, bRotation(TRUE)
-		, bMirror(FALSE)
+		, bMirror(TRUE)
 		, bAntiAlias(FALSE)
 		, iAntiAliasLevel(3)
 		, bKernelBlur(TRUE)
 		, iKernelRadius(9)
 		, fKernelAlpha(0.4f)
-		, iIterationLevel(20)
+		, iIterationLevel(4)
+		, iHitPercent(50)
 		, fGammaValue(3.0f)
 		, fGammaSatur(1.5f)
 	{}
