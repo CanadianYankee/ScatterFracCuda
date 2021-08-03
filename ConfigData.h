@@ -17,7 +17,7 @@ struct CONFIG_DATA
 	float fGammaSatur;
 
 	CONFIG_DATA() :
-		nDrawWidth(3841)
+		nDrawWidth(3840)
 		, nDrawHeight(2160)
 		, bRotation(TRUE)
 		, bMirror(TRUE)
