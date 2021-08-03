@@ -4,6 +4,9 @@ struct FLOAT_COLOR
 {
 	__device__ __host__ FLOAT_COLOR() : r(0), g(0), b(0) {}
 	__device__ __host__ FLOAT_COLOR(float r0, float g0, float b0) : r(r0), g(g0), b(b0) {}
+	__host__ __device__ static FLOAT_COLOR* From(float* fptr) { return reinterpret_cast<FLOAT_COLOR*>(fptr); }
+	__host__ __device__ static const FLOAT_COLOR* From(const float* fptr) { return reinterpret_cast<const FLOAT_COLOR*>(fptr); }
+
 	__device__ bool IsZero() { return r == 0 && g == 0 && b == 0; }
 	__device__ float Max() { return fmax(fmax(r, g), b); }
 	__device__ float Min() { return fmin(fmin(r, g), b); }

@@ -1,8 +1,9 @@
 #include "framework.h"
 #include "AccumData.h"
+#include "Transform.h"
 #include "CudaArray.h"
 
-__device__ void transform(ITERATOR* iter);
+__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATOR* iter);
 
 __device__ __forceinline__ float atomicMinFloat(float* addr, float value) {
 	float old;
@@ -20,7 +21,7 @@ __device__ __forceinline__ float atomicMaxFloat(float* addr, float value) {
 	return old;
 }
 
-__global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCudaArray2D<ACCUM> arrAccum, PVOID pStats)
+__global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<CTransform> arrTransforms, CCudaArray1D<ITERATOR> arrIter, CCudaArray2D<ACCUM> arrAccum, PVOID pStats)
 {
 	UINT idx = blockIdx.x * blockDim.x + threadIdx.x;
 	ITERATOR* iter = arrIter.GetAt(idx);
@@ -36,9 +37,9 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCu
 
 	for (UINT i = 0; i < params.nSteps; i++)
 	{
-		transform(iter);
+		transform(arrTransforms, iter);
 
-		if (!isfinite(iter->x) || !isfinite(iter->y))
+		if (!isfinite(iter->pos[0]) || !isfinite(iter->pos[1]))
 		{
 			accumStats->bAbort = TRUE;
 			break;
@@ -46,8 +47,8 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCu
 
 		if (!params.bInit)
 		{
-			int i = int(iter->x * params.rect.fScale + params.rect.fOffsetX);
-			int j = int(iter->y * params.rect.fScale + params.rect.fOffsetY);
+			int i = int(iter->pos[0] * params.rect.fScale + params.rect.fOffsetX);
+			int j = int(iter->pos[1] * params.rect.fScale + params.rect.fOffsetY);
 			if (arrAccum.ValidIndex(i, j))
 			{
 				ACCUM* element = arrAccum.GetAt(i, j);
@@ -70,45 +71,30 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<ITERATOR> arrIter, CCu
 	// On initialize, adjust the bounding box based on the zeroth block
 	if (params.bInit && (blockIdx.x == 0))
 	{
-		atomicMaxFloat(&(accumStats->xMax), iter->x);
-		atomicMaxFloat(&(accumStats->yMax), iter->y);
-		atomicMinFloat(&(accumStats->xMin), iter->x);
-		atomicMinFloat(&(accumStats->yMin), iter->y);
+		atomicMaxFloat(&(accumStats->xMax), iter->pos[0]);
+		atomicMaxFloat(&(accumStats->yMax), iter->pos[1]);
+		atomicMinFloat(&(accumStats->xMin), iter->pos[0]);
+		atomicMinFloat(&(accumStats->yMin), iter->pos[1]);
 	}
 }
 
-__device__ void transform(ITERATOR* iter)
+__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATOR* iter)
 {
 	float rnd = iter->rand.frand();
-	FLOAT_COLOR clr;
-	if (rnd < 0.5f)
+	for (UINT i = 0; i < arrTransforms.Length(); i++)
 	{
-		iter->x = iter->x * 0.5f;
-		iter->y = iter->y * 0.5f + 0.5f;
-		clr.r = 1.0f;
-		clr.g = 1.0f;
-		clr.b = 0.0f;
+		const CTransform* pTrans = arrTransforms.GetAt(i);
+		if (rnd <= pTrans->Weight())
+		{
+			iter->pos = pTrans->Matrix0() * iter->pos;
+			iter->pos += pTrans->Offset0();
+			if(!pTrans->Color().IsZero()) iter->clr.Tint(pTrans->Color(), 3.0f);
+			break;
+		}
 	}
-	else if (rnd < 0.9f)
-	{
-		iter->x = iter->x * 0.5f + 0.433f;
-		iter->y = iter->y * 0.5f - 0.25f;
-		clr.r = 1.0f;
-		clr.g = 0.0f;
-		clr.b = 1.0f;
-	}
-	else
-	{
-		iter->x = iter->x * 0.5f - 0.433f;
-		iter->y = iter->y * 0.5f - 0.25f;
-		clr.r = 0.0f;
-		clr.g = 1.0f;
-		clr.b = 1.0f;
-	}
-	iter->clr.Tint(clr, 3.0f);
 }
 
-cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats)
+cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<CTransform>& arrTransforms, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats)
 {
 	assert(params.nBlocks * params.nThreads == arrIter.Length());
 	cudaError_t error = cudaSuccess;
@@ -117,7 +103,7 @@ cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arr
 	cudaEventCreate(&stop);
 
 	cudaEventRecord(start);
-	iterate << < params.nBlocks, params.nThreads >> > (params, arrIter, arrAccum, pStats);
+	iterate << < params.nBlocks, params.nThreads >> > (params, arrTransforms, arrIter, arrAccum, pStats);
 	cudaEventRecord(stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;

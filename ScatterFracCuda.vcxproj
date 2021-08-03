@@ -33,7 +33,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 10.2.props" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.4.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -101,9 +101,12 @@
     <ClInclude Include="FloatColor.h" />
     <ClInclude Include="CudaArray.h" />
     <ClInclude Include="randgen.h" />
+    <ClInclude Include="Randomizer.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScatterFracCuda.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="Transform.h" />
+    <ClInclude Include="VectorMatrix.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DX11CudaTexture.cpp" />
@@ -143,6 +146,6 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 10.2.targets" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.4.targets" />
   </ImportGroup>
 </Project>

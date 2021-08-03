@@ -92,7 +92,7 @@ cudaError_t CDX11CudaTexture::UnmapFromCudaArray()
 
 	assert(m_pCudaArray);
 
-	err = m_GpuArray.CopyToCudaArray(m_pCudaArray);
+	err = m_GpuArray.CopyTo(m_pCudaArray, cudaMemcpyDeviceToDevice);
 	if (err != cudaSuccess) return err;
 
 	cudaGraphicsUnmapResources(1, &m_pCudaResource);

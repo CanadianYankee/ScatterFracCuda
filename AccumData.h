@@ -2,6 +2,7 @@
 
 #include "randgen.h"
 #include "FloatColor.h"
+#include "VectorMatrix.h"
 
 // Struct to encapsulate a memory-aligned 2D array on the GPU device
 struct GPU_ARRAY_2D_OLD
@@ -27,7 +28,7 @@ typedef FLOAT_COLOR FILTERED;
 // Each thread gets an iterator, which has a random number generator, a position, and a color
 struct ITERATOR
 {
-	float x, y;
+	CVector2D pos;
 	FLOAT_COLOR clr;
 	CRandgen rand;
 };

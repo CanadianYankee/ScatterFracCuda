@@ -1,7 +1,8 @@
 #include "framework.h"
 #include "Generator.h"
+#include "Transform.h"
 
-extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats);
+extern cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<CTransform>& arrTransforms, CCudaArray1D<ITERATOR>& arrIter, CCudaArray2D<ACCUM>& arrAccum, PVOID pStats);
 extern cudaError_t cuda_render_texture(const RENDER_PARAMS &params, CCudaTexture2D &texture, CCudaArray2D<FILTERED>& arrFiltered, CCudaArray2D<ACCUM> &arrAccum);
 
 CGenerator::CGenerator(const CONFIG_DATA &config) : 
@@ -10,6 +11,7 @@ CGenerator::CGenerator(const CONFIG_DATA &config) :
 	, m_nTotalIter(0)
 	, m_nCycleIter(0)
 	, m_nIterComplete(0)
+	, m_bRestartNeeded(false)
 {
 
 }
@@ -19,13 +21,14 @@ CGenerator::~CGenerator()
 	m_AccumArray.Free();
 	m_FilteredArray.Free();
 	m_IterArray.Free();
+	m_TransformArray.Free();
 	CudaFree(m_pAccumStats);
 	m_pTexture.reset();
 
 	cudaDeviceReset();
 }
 
-HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
+HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 {
 	HRESULT hr = S_OK;
 	cudaError_t err = cudaSuccess;
@@ -46,7 +49,9 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Create the array for the filtered and log-scaled results
-	err = m_FilteredArray.MallocPitch(m_config.nDrawWidth * m_config.AntiAlias(), m_config.nDrawHeight * m_config.AntiAlias());
+	UINT nFilteredWidth = m_config.nDrawWidth * m_config.AntiAlias();
+	UINT nFilteredHeight = m_config.nDrawHeight * m_config.AntiAlias();
+	err = m_FilteredArray.MallocPitch(nFilteredWidth, nFilteredHeight);
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Stats gathered during generation (managed memory for easy CPU access
@@ -57,6 +62,10 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 
 	// One random number generator for each thread
 	err = m_IterArray.Malloc(m_nIterBlocks * m_nIterThreads);
+	if (err != cudaSuccess) return E_FAIL;
+
+	// Create the set of transforms and copy to the GPU
+	err = RandomizeTransforms();
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Initialize all of the generators and do a short run to find window scale
@@ -71,13 +80,13 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 	pAccumStats->xMin = pAccumStats->yMin = FLT_MAX;
 	pAccumStats->xMax = pAccumStats->yMax = -FLT_MAX;
 	CCudaArray2D<ACCUM> arrDummy; 
-	err = cuda_iterate(paramsAccum, m_IterArray, arrDummy, m_pAccumStats);
+	err = cuda_iterate(paramsAccum, m_TransformArray, m_IterArray, arrDummy, m_pAccumStats);
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Check for failure (blowing up to infinity)
 	pAccumStats = (ACCUM_STATS*)m_pAccumStats;
 	if (pAccumStats->bAbort)
-		bFailed = TRUE;
+		m_bRestartNeeded = true;
 	else
 	{
 		// Set window scale
@@ -85,16 +94,118 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice, BOOL& bFailed)
 		float dy = (pAccumStats->yMax - pAccumStats->yMin) * 1.1f;
 		float cx = 0.5f * (pAccumStats->xMax + pAccumStats->xMin);
 		float cy = 0.5f * (pAccumStats->yMax + pAccumStats->yMin);
-		m_rectScale.fScale = min((float)m_FilteredArray.Width() / dx, (float)m_FilteredArray.Height() / dy);
-		m_rectScale.fOffsetX = 0.5f * (float)m_FilteredArray.Width() - m_rectScale.fScale * cx;
-		m_rectScale.fOffsetY = 0.5f * (float)m_FilteredArray.Height() - m_rectScale.fScale * cy;
+		m_rectScale.fScale = min((float)nFilteredWidth / dx, (float)nFilteredHeight / dy);
+		m_rectScale.fOffsetX = 0.5f * (float)nFilteredWidth - m_rectScale.fScale * cx;
+		m_rectScale.fOffsetY = 0.5f * (float)nFilteredHeight - m_rectScale.fScale * cy;
 	}
 
-	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * m_FilteredArray.Height() * m_FilteredArray.Width() / 25;
+	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * nFilteredHeight * nFilteredWidth / 25;
 	m_nCycleIter = m_nTotalIter / (16 * m_config.iIterationLevel);
 	m_nIterComplete = 0;
 
 	return hr;
+}
+
+cudaError_t CGenerator::RandomizeTransforms()
+{
+	cudaError_t err = cudaSuccess;
+
+	UINT nTransforms = (UINT)random(MAXTRANSFORMS - 1) + 2;
+	UINT nSymmetry = m_config.bRotation ? (randomFlip() ? random(MAXSYMMETRY) + 1 : 1) : 1;
+	bool bMirror = (m_config.bMirror) ? randomFlip() : false;
+	UINT nAllTransforms = nTransforms + nSymmetry - 1 + (bMirror ? 1 : 0);
+
+	std::vector<CTransform> vecTrans;
+	vecTrans.resize(nAllTransforms);
+
+	// Higher powers encourage more symmetry
+	float fPow = frand();
+
+	float fWeightPower = frand() * 2.0f;	// Higher weight powers give more even coverage
+	bool bElongate = randomFlip();
+	bool bSkew = randomFlip();
+
+	float fTotalWeight = 0.0f;
+
+	for (UINT i = 0; i < nTransforms; i++)
+	{
+		float fScaleFactor = 1.0f / pow(i + 1.0f, fPow);
+		float fScale = frand() * fWeightPower;
+
+		RandomAffine(fScaleFactor, fScale, bElongate, bSkew, vecTrans[i].Matrix0(), vecTrans[i].Offset0());
+
+		vecTrans[i].Weight() = pow(fScale, fWeightPower);
+		vecTrans[i].Color() = FLOAT_COLOR(frand(), frand(), frand());
+
+		fTotalWeight += vecTrans[i].Weight();
+	}
+
+	if (nSymmetry > 1)
+	{
+		float fAngle = 6.2831853f / (float)nSymmetry;
+		for (UINT i = 1; i < nSymmetry; i++)
+		{
+			vecTrans[i + nTransforms - 1].Matrix0() = CMatrix2D::Rotation(fAngle * (float)i);
+			vecTrans[i + nTransforms - 1].Offset0() = CVector2D(0.0f, 0.0f);
+			vecTrans[i + nTransforms - 1].Weight() = fTotalWeight;
+			vecTrans[i + nTransforms - 1].Color() = FLOAT_COLOR(0.0f, 0.0f, 0.0f);
+		}
+		fTotalWeight *= nSymmetry;
+	}
+
+	if (bMirror)
+	{
+		float fAngle = 6.2831853f * (frand() - 0.5f);
+		vecTrans[nAllTransforms - 1].Matrix0() = CMatrix2D::Rotation(fAngle) * CMatrix2D(-1.0f, 0.0f, 0.0f, 1.0f) * CMatrix2D::Rotation(-fAngle);
+		vecTrans[nAllTransforms - 1].Offset0() = CVector2D(0.0f, 0.0f);
+		vecTrans[nAllTransforms - 1].Weight() = fTotalWeight;
+		vecTrans[nAllTransforms - 1].Color() = FLOAT_COLOR(0.0f, 0.0f, 0.0f);
+
+		fTotalWeight *= 2.0f;
+	}
+
+	float fCumWeight = 0.0f;
+	for (size_t i = 0; i < vecTrans.size(); i++)
+	{
+		fCumWeight += vecTrans[i].Weight();
+		vecTrans[i].Weight() = fCumWeight / fTotalWeight;
+	}
+
+	// Copy transform information to GPU
+	err = m_TransformArray.Malloc(nAllTransforms);
+	if (err != cudaSuccess) return err;
+	err = m_TransformArray.CopyFrom((PVOID)(vecTrans.data()), cudaMemcpyHostToDevice);
+	if (err != cudaSuccess) return err;
+
+	return err;
+}
+
+void CGenerator::RandomAffine(float fScaleFactor, float fScale, bool bElongate, bool bSkew, CMatrix2D& matTrans, CVector2D& vecOffset)
+{
+	float fElong = 1.0f;
+	if (bElongate)
+	{
+		fElong = 1.0f - frand() * fScale;
+		if (randomFlip())
+			fElong = 1.0f / fElong;
+	}
+	float fSx = fScale * fElong;
+	float fSy = fScale / fElong;
+
+	float fRot = (frand() - 0.5f) * 2.0f * 3.14169f;
+	matTrans = CMatrix2D::Rotation(fRot) * CMatrix2D(fSx, 0, 0, fSy);
+
+	float fSkew = 0.0f;
+	if (bSkew)
+	{
+		fSkew = (frand() - 0.5f) * (1.0f - fScale);
+		matTrans *= CMatrix2D(1.0f, fSkew, fSkew, 1.0f) / sqrt(1.0f - fSkew * fSkew);
+	}
+
+	vecOffset = CVector2D(1.0f, 0.0f);
+	vecOffset = vecOffset.Rotate(frand() * 6.2831853f);
+	float fVecLen = frand();
+	vecOffset *= fVecLen;
 }
 
 HRESULT CGenerator::Iterate(BOOL bRender)
@@ -110,11 +221,19 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 		paramsAccum.bHitPercent = (m_nIterComplete == 0);
 		paramsAccum.nThreads = m_nIterThreads;
 		paramsAccum.nBlocks = m_nIterBlocks;
-		err = cuda_iterate(paramsAccum, m_IterArray, m_AccumArray, m_pAccumStats);
+		err = cuda_iterate(paramsAccum, m_TransformArray, m_IterArray, m_AccumArray, m_pAccumStats);
 		m_nIterComplete += paramsAccum.nSteps * m_IterArray.Length();
 
 		ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
-		float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
+		if (paramsAccum.bHitPercent)
+		{
+			float fPercent = (float)(pAccumStats->nNewHits) / (float)(pAccumStats->nHitRect);
+			TCHAR out[128];
+			_stprintf_s(out, 128, _T("Hit fraction = %f\n"), fPercent);
+			OutputDebugString(out);
+			if (fPercent < m_config.iHitPercent * 0.01f)
+				m_bRestartNeeded = true;
+		}
 		
 		if (bRender)
 		{
