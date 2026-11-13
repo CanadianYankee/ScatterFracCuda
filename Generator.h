@@ -35,6 +35,7 @@ protected:
 	PVOID m_pAccumStats;
 	bool m_bRestartNeeded;
 	RECT_SCALE m_rectScale;
+	SYMMETRY m_symmetry;
 	const UINT m_nIterThreads = 128;
 	const UINT m_nIterBlocks = 128;
 	UINT m_nTotalIter;

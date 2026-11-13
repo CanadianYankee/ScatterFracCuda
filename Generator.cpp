@@ -76,6 +76,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	paramsAccum.nSteps = 128;
 	paramsAccum.nThreads = m_nIterThreads;
 	paramsAccum.nBlocks = m_nIterBlocks;
+	paramsAccum.symmetry = m_symmetry;
 	ACCUM_STATS* pAccumStats = (ACCUM_STATS*)m_pAccumStats;
 	pAccumStats->xMin = pAccumStats->yMin = FLT_MAX;
 	pAccumStats->xMax = pAccumStats->yMax = -FLT_MAX;
@@ -113,10 +114,19 @@ cudaError_t CGenerator::RandomizeTransforms()
 	UINT nTransforms = (UINT)random(MAXTRANSFORMS - 1) + 2;
 	UINT nSymmetry = m_config.bRotation ? (randomFlip() ? random(MAXSYMMETRY) + 1 : 1) : 1;
 	bool bMirror = (m_config.bMirror) ? randomFlip() : false;
-	UINT nAllTransforms = nTransforms + nSymmetry - 1 + (bMirror ? 1 : 0);
+
+	// Symmetry is applied in the kernel after every base transform (see SYMMETRY)
+	m_symmetry = SYMMETRY();
+	m_symmetry.nRotations = nSymmetry;
+	m_symmetry.bMirror = bMirror ? TRUE : FALSE;
+	if (bMirror)
+	{
+		float fAngle = 6.2831853f * (frand() - 0.5f);
+		m_symmetry.matMirror = CMatrix2D::Rotation(fAngle) * CMatrix2D(-1.0f, 0.0f, 0.0f, 1.0f) * CMatrix2D::Rotation(-fAngle);
+	}
 
 	std::vector<CTransform> vecTrans;
-	vecTrans.resize(nAllTransforms);
+	vecTrans.resize(nTransforms);
 
 	// Higher powers encourage more symmetry
 	float fPow = frand();
@@ -140,30 +150,6 @@ cudaError_t CGenerator::RandomizeTransforms()
 		fTotalWeight += vecTrans[i].Weight();
 	}
 
-	if (nSymmetry > 1)
-	{
-		float fAngle = 6.2831853f / (float)nSymmetry;
-		for (UINT i = 1; i < nSymmetry; i++)
-		{
-			vecTrans[i + nTransforms - 1].Matrix0() = CMatrix2D::Rotation(fAngle * (float)i);
-			vecTrans[i + nTransforms - 1].Offset0() = CVector2D(0.0f, 0.0f);
-			vecTrans[i + nTransforms - 1].Weight() = fTotalWeight;
-			vecTrans[i + nTransforms - 1].Color() = FLOAT_COLOR(0.0f, 0.0f, 0.0f);
-		}
-		fTotalWeight *= nSymmetry;
-	}
-
-	if (bMirror)
-	{
-		float fAngle = 6.2831853f * (frand() - 0.5f);
-		vecTrans[nAllTransforms - 1].Matrix0() = CMatrix2D::Rotation(fAngle) * CMatrix2D(-1.0f, 0.0f, 0.0f, 1.0f) * CMatrix2D::Rotation(-fAngle);
-		vecTrans[nAllTransforms - 1].Offset0() = CVector2D(0.0f, 0.0f);
-		vecTrans[nAllTransforms - 1].Weight() = fTotalWeight;
-		vecTrans[nAllTransforms - 1].Color() = FLOAT_COLOR(0.0f, 0.0f, 0.0f);
-
-		fTotalWeight *= 2.0f;
-	}
-
 	float fCumWeight = 0.0f;
 	for (size_t i = 0; i < vecTrans.size(); i++)
 	{
@@ -172,7 +158,7 @@ cudaError_t CGenerator::RandomizeTransforms()
 	}
 
 	// Copy transform information to GPU
-	err = m_TransformArray.Malloc(nAllTransforms);
+	err = m_TransformArray.Malloc(nTransforms);
 	if (err != cudaSuccess) return err;
 	err = m_TransformArray.CopyFrom((PVOID)(vecTrans.data()), cudaMemcpyHostToDevice);
 	if (err != cudaSuccess) return err;
@@ -221,6 +207,7 @@ HRESULT CGenerator::Iterate(BOOL bRender)
 		paramsAccum.bHitPercent = (m_nIterComplete == 0);
 		paramsAccum.nThreads = m_nIterThreads;
 		paramsAccum.nBlocks = m_nIterBlocks;
+		paramsAccum.symmetry = m_symmetry;
 		err = cuda_iterate(paramsAccum, m_TransformArray, m_IterArray, m_AccumArray, m_pAccumStats);
 		m_nIterComplete += paramsAccum.nSteps * m_IterArray.Length();
 

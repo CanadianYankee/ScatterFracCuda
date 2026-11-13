@@ -3,7 +3,7 @@
 #include "Transform.h"
 #include "CudaArray.h"
 
-__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATOR* iter);
+__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, const SYMMETRY &symmetry, ITERATOR* iter);
 
 __device__ __forceinline__ float atomicMinFloat(float* addr, float value) {
 	float old;
@@ -37,7 +37,7 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<CTransform> arrTransfo
 
 	for (UINT i = 0; i < params.nSteps; i++)
 	{
-		transform(arrTransforms, iter);
+		transform(arrTransforms, params.symmetry, iter);
 
 		if (!isfinite(iter->pos[0]) || !isfinite(iter->pos[1]))
 		{
@@ -78,7 +78,7 @@ __global__ void iterate(ACCUM_PARAMS params, CCudaArray1D<CTransform> arrTransfo
 	}
 }
 
-__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATOR* iter)
+__device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, const SYMMETRY &symmetry, ITERATOR* iter)
 {
 	float rnd = iter->rand.frand();
 	for (UINT i = 0; i < arrTransforms.Length(); i++)
@@ -91,6 +91,22 @@ __device__ void transform(const CCudaArray1D<CTransform> &arrTransforms, ITERATO
 			if(!pTrans->Color().IsZero()) iter->clr.Tint(pTrans->Color(), 3.0f);
 			break;
 		}
+	}
+
+	// Apply a uniformly chosen element of the symmetry group (identity included)
+	if (symmetry.nRotations > 1)
+	{
+		UINT k = iter->rand.rand() % symmetry.nRotations;
+		if (k)
+		{
+			float s, c;
+			sincospif(2.0f * (float)k / (float)symmetry.nRotations, &s, &c);
+			iter->pos = CMatrix2D(c, -s, s, c) * iter->pos;
+		}
+	}
+	if (symmetry.bMirror && (iter->rand.rand() & 0x80000000))
+	{
+		iter->pos = symmetry.matMirror * iter->pos;
 	}
 }
 

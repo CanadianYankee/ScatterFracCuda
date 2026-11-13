@@ -40,6 +40,18 @@ struct RECT_SCALE
 	float fScale, fOffsetX, fOffsetY;
 };
 
+// Symmetry group applied after every base transform: a uniformly random rotation
+// by 2*pi*k/nRotations (k = 0..nRotations-1, k = 0 being the identity), followed
+// with probability 1/2 by the mirror reflection. Sampling the whole group uniformly
+// on every step keeps the point density exactly symmetric.
+struct SYMMETRY
+{
+	SYMMETRY() : nRotations(1), bMirror(FALSE), matMirror(1.0f, 0.0f, 0.0f, 1.0f) {}
+	UINT nRotations;	// N for N-fold rotational symmetry (1 = none)
+	BOOL bMirror;		// When true, randomly apply matMirror
+	CMatrix2D matMirror;	// Reflection matrix
+};
+
 // Parameters passed to each accum thread
 struct ACCUM_PARAMS
 {
@@ -50,6 +62,7 @@ struct ACCUM_PARAMS
 	UINT nThreads;		// Number of threads for the iterator bundle
 	UINT nBlocks;		// Number of blocks for the iterator bundle
 	RECT_SCALE rect;	// Scaling and offset to fit points in window
+	SYMMETRY symmetry;	// Rotation/mirror symmetry applied after each transform
 };
 
 // Global statistics kept across all accum threads (in global GPU memory)
