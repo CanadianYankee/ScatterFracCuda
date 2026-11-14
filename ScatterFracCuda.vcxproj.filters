@@ -30,10 +30,16 @@
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ScatterFracCuda.h">
+    <ClInclude Include="FractalSaver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GenerateWnd.h">
+    <ClInclude Include="SaverBase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SaverEngine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowCluster.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DXUtils.h">
@@ -74,7 +80,16 @@
     <ClCompile Include="ScatterFracCuda.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GenerateWnd.cpp">
+    <ClCompile Include="FractalSaver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SaverBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SaverEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowCluster.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DXUtils.cpp">
@@ -86,6 +101,11 @@
     <ClCompile Include="Generator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="ScatterFracCuda.manifest">
+      <Filter>Resource Files</Filter>
+    </Manifest>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ScatterFracCuda.rc">

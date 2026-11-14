@@ -4,17 +4,6 @@
 #include "FloatColor.h"
 #include "VectorMatrix.h"
 
-// Struct to encapsulate a memory-aligned 2D array on the GPU device
-struct GPU_ARRAY_2D_OLD
-{
-	GPU_ARRAY_2D_OLD() : pArray(nullptr), nWidth(0), nHeight(0), nPitch(0) {}
-	GPU_ARRAY_2D_OLD(PVOID ptr, UINT w, UINT h, UINT p = 0) : pArray(ptr), nWidth(w), nHeight(h), nPitch(p) {}
-	PVOID pArray;
-	UINT nWidth;
-	UINT nHeight;
-	UINT nPitch;
-};
-
 // Each element in the 2D accum array has a count and a color
 struct ACCUM
 {

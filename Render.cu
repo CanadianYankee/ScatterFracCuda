@@ -136,9 +136,7 @@ __global__ void render_texture(const RENDER_PARAMS params, CCudaTexture2D textur
 cudaError_t cuda_render_texture(const RENDER_PARAMS& params, CCudaTexture2D& texture, CCudaArray2D<FILTERED>& arrFiltered, CCudaArray2D<ACCUM>& arrAccum)
 {
 	cudaError_t error = cudaSuccess;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
+	CCudaEventPair events;
 
 	// First run the log-scale and density estimation to go from arrAccum -> arrFiltered
 	dim3 Db = dim3(16, 16);
@@ -146,30 +144,30 @@ cudaError_t cuda_render_texture(const RENDER_PARAMS& params, CCudaTexture2D& tex
 	error = arrFiltered.Zero();
 	if (error != cudaSuccess) return error;
 
-	cudaEventRecord(start);
+	cudaEventRecord(events.start);
 	rescale_filter << <Dg, Db >> > (params, arrFiltered, arrAccum);
-	cudaEventRecord(stop);
+	cudaEventRecord(events.stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
-	cudaEventSynchronize(stop);
+	cudaEventSynchronize(events.stop);
 	error = cudaGetLastError();
 	float milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
+	cudaEventElapsedTime(&milliseconds, events.start, events.stop);
 	if (error != cudaSuccess) return error;
 
 	// Next, do anti-aliasing and final conversion to texture to go from arrFiltered -> texture
 	Dg = texture.BlockDim(Db);
 
-	cudaEventRecord(start);
+	cudaEventRecord(events.start);
 	render_texture << <Dg, Db >> > (params, texture, arrFiltered);
-	cudaEventRecord(stop);
+	cudaEventRecord(events.stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
 
-	cudaEventSynchronize(stop);
+	cudaEventSynchronize(events.stop);
 	error = cudaGetLastError();
 	milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
+	cudaEventElapsedTime(&milliseconds, events.start, events.stop);
 
 	return error;
 }

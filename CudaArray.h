@@ -2,6 +2,18 @@
 
 inline void CudaFree(PVOID& ptr) { if (ptr) { cudaFree(ptr); ptr = nullptr; } }
 
+// A start/stop event pair for timing kernel launches. The events are destroyed when this
+// goes out of scope, so per-frame launches don't leak them.
+struct CCudaEventPair
+{
+	cudaEvent_t start = nullptr;
+	cudaEvent_t stop = nullptr;
+	CCudaEventPair() { cudaEventCreate(&start); cudaEventCreate(&stop); }
+	~CCudaEventPair() { if (start) cudaEventDestroy(start); if (stop) cudaEventDestroy(stop); }
+	CCudaEventPair(const CCudaEventPair&) = delete;
+	CCudaEventPair& operator=(const CCudaEventPair&) = delete;
+};
+
 // This wraps a 1D array that's allocated on the host, but only accessed by the GPU
 template <typename T>
 class CCudaArray1D

@@ -25,7 +25,7 @@ CGenerator::~CGenerator()
 	CudaFree(m_pAccumStats);
 	m_pTexture.reset();
 
-	cudaDeviceReset();
+	// No cudaDeviceReset() here: other generators (one per monitor) share the device's context.
 }
 
 HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
@@ -36,6 +36,7 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	// Create the D3D11 texture that Cuda will draw to 
 	m_pTexture = std::make_unique<CDX11CudaTexture>(m_config.nDrawWidth, m_config.nDrawHeight);
 	hr = m_pTexture->Initialize(pD3DDevice);
+	if (FAILED(hr)) return hr;
 
 	// Create the array of count/colors for fractal generation 
 	UINT nAccWidth = m_config.nDrawWidth;
@@ -55,9 +56,9 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	if (err != cudaSuccess) return E_FAIL;
 
 	// Stats gathered during generation (managed memory for easy CPU access
-	err = cudaMallocManaged(&m_pAccumStats, sizeof(UINT));
+	err = cudaMallocManaged(&m_pAccumStats, sizeof(ACCUM_STATS));
 	if (err != cudaSuccess) return E_FAIL;
-	err = cudaMemset(m_pAccumStats, 0, sizeof(UINT));
+	err = cudaMemset(m_pAccumStats, 0, sizeof(ACCUM_STATS));
 	if (err != cudaSuccess) return E_FAIL;
 
 	// One random number generator for each thread
@@ -101,6 +102,11 @@ HRESULT CGenerator::Initialize(ComPtr<ID3D11Device> pD3DDevice)
 	}
 
 	m_nTotalIter = m_config.iIterationLevel * (m_config.AntiAlias() * m_config.AntiAlias()) * nFilteredHeight * nFilteredWidth / 25;
+	// Every frame runs at least one step on every iterator thread, so a small draw size would
+	// otherwise use up its total in a handful of frames. Raise the total to fill iMinFrames.
+	UINT nMinTotalIter = m_config.iMinFrames * m_IterArray.Length();
+	if (m_nTotalIter < nMinTotalIter)
+		m_nTotalIter = nMinTotalIter;
 	m_nCycleIter = m_nTotalIter / (16 * m_config.iIterationLevel);
 	m_nIterComplete = 0;
 

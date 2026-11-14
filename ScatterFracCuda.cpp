@@ -1,16 +1,10 @@
 // ScatterFracCuda.cpp : Defines the entry point for the application.
 //
+// Run as ScatterFracCuda.exe for a normal window (debugging), or as ScatterFracCuda.scr
+// with the standard screen saver switches (/s, /p <hwnd>, /c). See CSaverEngine.
 
 #include "framework.h"
-#include "ScatterFracCuda.h"
-#include "GenerateWnd.h"
-
-#define MAX_LOADSTRING 100
-
-// Global Variables:
-HINSTANCE hInst;                                // current instance
-WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
-WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+#include "SaverEngine.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -18,24 +12,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_ int       nCmdShow)
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
+    UNREFERENCED_PARAMETER(nCmdShow);
 
-    // Initialize global strings
-    LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_SCATTERFRACCUDA, szWindowClass, MAX_LOADSTRING);
+    CSaverEngine engine(hInstance);
 
-    CGenerateWnd *pWnd = CGenerateWnd::GetMainWnd();
-
-    // Perform window initialization:
-    if (!pWnd->Initialize(hInstance, szTitle, szWindowClass, nCmdShow))
+    if (engine.Initialize(lpCmdLine))
     {
-        return FALSE;
+        engine.Run();
     }
 
-	// Run the main message loop
-	int iRet = pWnd->Run(hInstance);
+    engine.CleanUp();
 
-	CGenerateWnd::DestroyMainWnd();
-
-    return iRet;
+    return 0;
 }

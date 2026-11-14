@@ -16,7 +16,6 @@ public:
 	float AspectRatio() { return m_fAspectRatio; }
 	cudaError_t MapToCudaArray(CCudaTexture2D &cudaTexture);
 	cudaError_t UnmapFromCudaArray();
-	CCudaTexture2D &GpuArray() { return m_GpuArray; }
 
 protected:
 	UINT m_nWidth;

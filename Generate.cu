@@ -114,20 +114,18 @@ cudaError_t cuda_iterate(const ACCUM_PARAMS& params, CCudaArray1D<CTransform>& a
 {
 	assert(params.nBlocks * params.nThreads == arrIter.Length());
 	cudaError_t error = cudaSuccess;
-	cudaEvent_t start, stop;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
+	CCudaEventPair events;
 
-	cudaEventRecord(start);
+	cudaEventRecord(events.start);
 	iterate << < params.nBlocks, params.nThreads >> > (params, arrTransforms, arrIter, arrAccum, pStats);
-	cudaEventRecord(stop);
+	cudaEventRecord(events.stop);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) return error;
 
-	cudaEventSynchronize(stop);
+	cudaEventSynchronize(events.stop);
 	error = cudaGetLastError();
 	float milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
+	cudaEventElapsedTime(&milliseconds, events.start, events.stop);
 
 	return error;
 }

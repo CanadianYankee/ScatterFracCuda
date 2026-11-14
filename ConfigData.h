@@ -15,6 +15,7 @@ struct CONFIG_DATA
 	UINT iHitPercent;
 	float fGammaValue;
 	float fGammaSatur;
+	UINT iMinFrames;	// Minimum frames per fractal (0 = no minimum); raises the iteration total for small draw sizes
 
 	CONFIG_DATA() :
 		nDrawWidth(3840)
@@ -30,6 +31,7 @@ struct CONFIG_DATA
 		, iHitPercent(50)
 		, fGammaValue(3.0f)
 		, fGammaSatur(1.5f)
+		, iMinFrames(0)
 	{}
 
 	inline UINT AntiAlias() { return bAntiAlias && iAntiAliasLevel > 1 ? iAntiAliasLevel : 1; }
